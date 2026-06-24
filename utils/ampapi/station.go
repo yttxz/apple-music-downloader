@@ -29,7 +29,7 @@ func GetStationResp(storefront string, id string, language string, token string)
 	query.Set("extend", "editorialVideo")
 	query.Set("l", language)
 	req.URL.RawQuery = query.Encode()
-	do, err := http.DefaultClient.Do(req)
+	do, err := apiClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -41,6 +41,9 @@ func GetStationResp(storefront string, id string, language string, token string)
 	err = json.NewDecoder(do.Body).Decode(&obj)
 	if err != nil {
 		return nil, err
+	}
+	if len(obj.Data) == 0 {
+		return nil, fmt.Errorf("station %s not found", id)
 	}
 	return obj, nil
 }
@@ -69,7 +72,7 @@ func GetStationAssetsUrlAndServerUrl(id string, mutoken string, token string) (s
 	query.Set("kind", "radioStation")
 	query.Set("keyFormat", "web")
 	req.URL.RawQuery = query.Encode()
-	do, err := http.DefaultClient.Do(req)
+	do, err := apiClient.Do(req)
 	if err != nil {
 		return "", "", err
 	}
@@ -81,6 +84,9 @@ func GetStationAssetsUrlAndServerUrl(id string, mutoken string, token string) (s
 	err = json.NewDecoder(do.Body).Decode(&obj)
 	if err != nil {
 		return "", "", err
+	}
+	if len(obj.Results.Assets) == 0 {
+		return "", "", errors.New("station assets not found")
 	}
 	return obj.Results.Assets[0].Url, obj.Results.Assets[0].KeyServerUrl, nil
 }
@@ -110,7 +116,7 @@ func GetStationNextTracks(id, mutoken, language, token string) (*TrackResp, erro
 	query.Set("extend", "editorialVideo,extendedAssetUrls")
 	query.Set("l", language)
 	req.URL.RawQuery = query.Encode()
-	do, err := http.DefaultClient.Do(req)
+	do, err := apiClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -122,6 +128,9 @@ func GetStationNextTracks(id, mutoken, language, token string) (*TrackResp, erro
 	err = json.NewDecoder(do.Body).Decode(&obj)
 	if err != nil {
 		return nil, err
+	}
+	if len(obj.Data) == 0 {
+		return nil, errors.New("station returned no tracks")
 	}
 	return obj, nil
 }

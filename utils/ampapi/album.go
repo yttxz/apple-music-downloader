@@ -35,7 +35,7 @@ func GetAlbumResp(storefront string, id string, language string, token string) (
 	query.Set("extend", "editorialVideo,extendedAssetUrls")
 	query.Set("l", language)
 	req.URL.RawQuery = query.Encode()
-	do, err := http.DefaultClient.Do(req)
+	do, err := apiClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -47,6 +47,9 @@ func GetAlbumResp(storefront string, id string, language string, token string) (
 	err = json.NewDecoder(do.Body).Decode(&obj)
 	if err != nil {
 		return nil, err
+	}
+	if len(obj.Data) == 0 {
+		return nil, fmt.Errorf("album %s not found", id)
 	}
 	if len(obj.Data[0].Relationships.Tracks.Next) > 0 {
 		next := obj.Data[0].Relationships.Tracks.Next
@@ -63,16 +66,17 @@ func GetAlbumResp(storefront string, id string, language string, token string) (
 			query.Set("include", "artists")
 			query.Set("extend", "editorialVideo,extendedAssetUrls")
 			req.URL.RawQuery = query.Encode()
-			do, err := http.DefaultClient.Do(req)
+			do, err := apiClient.Do(req)
 			if err != nil {
 				return nil, err
 			}
-			defer do.Body.Close()
 			if do.StatusCode != http.StatusOK {
+				do.Body.Close()
 				return nil, errors.New(do.Status)
 			}
 			obj2 := new(TrackResp)
 			err = json.NewDecoder(do.Body).Decode(&obj2)
+			do.Body.Close()
 			if err != nil {
 				return nil, err
 			}
@@ -112,7 +116,7 @@ func GetAlbumRespByHref(href string, language string, token string) (*AlbumResp,
 	query.Set("extend", "editorialVideo,extendedAssetUrls")
 	query.Set("l", language)
 	req.URL.RawQuery = query.Encode()
-	do, err := http.DefaultClient.Do(req)
+	do, err := apiClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +128,9 @@ func GetAlbumRespByHref(href string, language string, token string) (*AlbumResp,
 	err = json.NewDecoder(do.Body).Decode(&obj)
 	if err != nil {
 		return nil, err
+	}
+	if len(obj.Data) == 0 {
+		return nil, errors.New("album not found")
 	}
 	if len(obj.Data[0].Relationships.Tracks.Next) > 0 {
 		next := obj.Data[0].Relationships.Tracks.Next
@@ -140,16 +147,17 @@ func GetAlbumRespByHref(href string, language string, token string) (*AlbumResp,
 			query.Set("include", "artists")
 			query.Set("extend", "editorialVideo,extendedAssetUrls")
 			req.URL.RawQuery = query.Encode()
-			do, err := http.DefaultClient.Do(req)
+			do, err := apiClient.Do(req)
 			if err != nil {
 				return nil, err
 			}
-			defer do.Body.Close()
 			if do.StatusCode != http.StatusOK {
+				do.Body.Close()
 				return nil, errors.New(do.Status)
 			}
 			obj2 := new(TrackResp)
 			err = json.NewDecoder(do.Body).Decode(&obj2)
+			do.Body.Close()
 			if err != nil {
 				return nil, err
 			}

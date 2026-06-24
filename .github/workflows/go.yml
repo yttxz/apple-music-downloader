@@ -8,7 +8,23 @@ on:
 
 jobs:
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23.1'
+    - name: Test
+      run: go test ./...
+    - name: Vet
+      run: go vet ./...
+    - name: Build
+      run: go build -v .
+
   build-windows:
+    needs: test
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
@@ -18,7 +34,7 @@ jobs:
         go-version: '1.23.1'
     - name: Build
       run: |
-        go build -o main.exe -v ./main.go
+        go build -o main.exe -v .
     - name: Create a new directory and copy files
       run: |
         mkdir -p alac
@@ -34,6 +50,7 @@ jobs:
         path: alac/*
 
   build-linux:
+    needs: test
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -43,7 +60,7 @@ jobs:
         go-version: '1.23.1'
     - name: Build
       run: |
-        go build -o main -v ./main.go
+        go build -o main -v .
     - name: Create a new directory and copy files
       run: |
         mkdir -p alac
@@ -59,6 +76,7 @@ jobs:
         path: alac/*
 
   build-macos:
+    needs: test
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v4
@@ -68,7 +86,7 @@ jobs:
         go-version: '1.23.1'
     - name: Build
       run: |
-        go build -o main -v ./main.go
+        go build -o main -v .
     - name: Create a new directory and copy files
       run: |
         mkdir -p alac
@@ -81,4 +99,34 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: apple-music-alac-atmos-downloader-macos
+        path: alac/*
+
+  build-macos-arm64:
+    needs: test
+    runs-on: macos-latest
+    env:
+      GOOS: darwin
+      GOARCH: arm64
+      CGO_ENABLED: 0
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23.1'
+    - name: Build
+      run: |
+        go build -trimpath -ldflags="-s -w" -o apple-music-dl -v .
+    - name: Create a new directory and copy files
+      run: |
+        mkdir -p alac
+        cp agent.js alac/
+        cp agent-arm64.js alac/
+        cp config.yaml.example alac/config.yaml
+        cp README.md alac/
+        cp apple-music-dl alac/
+    - name: Upload apple-music-alac-atmos-downloader
+      uses: actions/upload-artifact@v4
+      with:
+        name: apple-music-alac-atmos-downloader-macos-arm64
         path: alac/*

@@ -23,7 +23,7 @@ type CDM struct {
 	clientID   []byte
 	sessionID  [32]byte
 
-	widevineCencHeader      WidevineCencHeader
+	widevineCencHeader      *WidevineCencHeader
 	signedDeviceCertificate SignedDeviceCertificate
 	privacyMode             bool
 }
@@ -70,7 +70,7 @@ func NewCDM(privateKey string, clientID []byte, initData []byte) (CDM, error) {
 		privateKey: keyParsed,
 		clientID:   clientID,
 
-		widevineCencHeader: widevineCencHeader,
+		widevineCencHeader: &widevineCencHeader,
 
 		sessionID: sessionID,
 	}, nil
@@ -116,7 +116,7 @@ func (c *CDM) GetLicenseRequest() ([]byte, error) {
 		licenseRequest.Type = &v
 	}
 
-	licenseRequest.Msg.ContentId.CencId.Pssh = &c.widevineCencHeader
+	licenseRequest.Msg.ContentId.CencId.Pssh = c.widevineCencHeader
 
 	{
 		v := LicenseType_DEFAULT

@@ -25,13 +25,13 @@
 2. **Word-by-word & Out-of-sync Lyrics** support
 3. **Artist Album Download** - Automatically download all albums from an artist
    ```bash
-   go run main.go https://music.apple.com/us/artist/taylor-swift/159260351 --all-album
+   go run . https://music.apple.com/us/artist/taylor-swift/159260351 --all-album
    ```
 4. **Stream Decryption** - Uses Sendy McSenderson's code for download-and-decrypt streaming, solving memory issues with large files
 5. **MV Download** - Requires mp4decrypt installation
 6. **Interactive Search** - Arrow-key navigation for search results
    ```bash
-   go run main.go --search [song/album/artist] "search_term"
+   go run . --search [song/album/artist] "search_term"
    ```
 
 ---
@@ -54,6 +54,40 @@
 
 ## 🚀 Usage
 
+### Native macOS (Apple Silicon / arm64)
+
+1. Install native arm64 dependencies with Homebrew:
+
+   ```bash
+   brew install go ffmpeg gpac bento4
+   ```
+
+   `gpac` provides `MP4Box`; `bento4` provides `mp4decrypt` for MV/station downloads.
+
+2. Build a native macOS arm64 package:
+
+   ```bash
+   make package-macos-arm64
+   ```
+
+   The packaged binary and default config are written to `dist/darwin-arm64/`, with an archive at `dist/apple-music-dl-darwin-arm64.tar.gz`.
+
+3. Run locally:
+
+   ```bash
+   cd dist/darwin-arm64
+   ./apple-music-dl --help
+   ./apple-music-dl https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511
+   ```
+
+   The app automatically checks common Apple Silicon Homebrew paths such as `/opt/homebrew/bin`. If your tools live elsewhere, set these in `config.yaml`:
+
+   ```yaml
+   ffmpeg-path: "/opt/homebrew/bin/ffmpeg"
+   mp4box-path: "/opt/homebrew/bin/MP4Box"
+   mp4decrypt-path: "/opt/homebrew/bin/mp4decrypt"
+   ```
+
 ### Running with Docker
 
 1. Ensure the [wrapper](https://github.com/WorldObservationLog/wrapper) decryption program is running
@@ -72,6 +106,9 @@ docker run --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-
 
 # Interactive selection
 docker run -it --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-downloader --select https://music.apple.com/ru/album/children-of-forever/1443732441
+
+# Music video selection / quality picker
+docker run -it --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-downloader --select https://music.apple.com/us/artist/taylor-swift/159260351
 
 # Download playlists
 docker run --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-downloader https://music.apple.com/us/playlist/taylor-swift-essentials/pl.3950454ced8c45a3b0cc693c2a7db97b
@@ -104,42 +141,49 @@ docker run --network host -v ./downloads:/downloads -v ./config.yaml:/app/config
 
 2. **Download albums:**
    ```bash
-   go run main.go https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511
+   go run . https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511
    ```
 
 3. **Download single song:**
    ```bash
-   go run main.go --song https://music.apple.com/us/album/never-gonna-give-you-up-2022-remaster/1624945511?i=1624945512
+   go run . --song https://music.apple.com/us/album/never-gonna-give-you-up-2022-remaster/1624945511?i=1624945512
    # or
-   go run main.go https://music.apple.com/us/song/you-move-me-2022-remaster/1624945520
+   go run . https://music.apple.com/us/song/you-move-me-2022-remaster/1624945520
    ```
 
 4. **Interactive selection:**
    ```bash
-   go run main.go --select https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511
+   go run . --select https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511
    ```
-   Enter track numbers separated by spaces.
+   For album and playlist URLs, select tracks/items. For artist URLs, select albums and music videos in one table. For direct music video URLs, select video quality.
 
-5. **Download playlists:**
+5. **Artist / music video selection:**
    ```bash
-   go run main.go https://music.apple.com/us/playlist/taylor-swift-essentials/pl.3950454ced8c45a3b0cc693c2a7db97b
+   go run . --select https://music.apple.com/us/artist/taylor-swift/159260351
    # or
-   go run main.go https://music.apple.com/us/playlist/hi-res-lossless-24-bit-192khz/pl.u-MDAWvpjt38370N
+   go run . --select https://music.apple.com/us/music-video/example/123456789
    ```
 
-6. **Dolby Atmos:**
+6. **Download playlists:**
    ```bash
-   go run main.go --atmos https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
+   go run . https://music.apple.com/us/playlist/taylor-swift-essentials/pl.3950454ced8c45a3b0cc693c2a7db97b
+   # or
+   go run . https://music.apple.com/us/playlist/hi-res-lossless-24-bit-192khz/pl.u-MDAWvpjt38370N
    ```
 
-7. **AAC format:**
+7. **Dolby Atmos:**
    ```bash
-   go run main.go --aac https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
+   go run . --atmos https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
    ```
 
-8. **View quality info:**
+8. **AAC format:**
    ```bash
-   go run main.go --debug https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
+   go run . --aac https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
+   ```
+
+9. **View quality info:**
+   ```bash
+   go run . --debug https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
    ```
 
 📖 [Chinese Tutorial (Method 3)](https://telegra.ph/Apple-Music-Alac%E9%AB%98%E8%A7%A3%E6%9E%90%E5%BA%A6%E6%97%A0%E6%8D%9F%E9%9F%B3%E4%B9%90%E4%B8%8B%E8%BD%BD%E6%95%99%E7%A8%8B-04-02-2)

@@ -1,7 +1,7 @@
 package task
 
 import (
-	"main/utils/ampapi"
+	"apple-music-downloader/utils/ampapi"
 )
 
 type Track struct {
@@ -37,13 +37,14 @@ func (t *Track) GetAlbumData(token string) error {
 	if err != nil {
 		return err
 	}
+	if len(resp.Data) == 0 {
+		return ampapi.ErrNoData
+	}
 	t.AlbumData = resp.Data[0]
 	//尝试获取该track所在album的disk总数
-	if len(resp.Data) > 0 {
-		len := len(resp.Data[0].Relationships.Tracks.Data)
-		if len > 0 {
-			t.DiscTotal = resp.Data[0].Relationships.Tracks.Data[len-1].Attributes.DiscNumber
-		}
+	trackTotal := len(resp.Data[0].Relationships.Tracks.Data)
+	if trackTotal > 0 {
+		t.DiscTotal = resp.Data[0].Relationships.Tracks.Data[trackTotal-1].Attributes.DiscNumber
 	}
 
 	return nil
