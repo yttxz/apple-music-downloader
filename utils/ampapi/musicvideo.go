@@ -35,7 +35,7 @@ func GetMusicVideoResp(storefront string, id string, language string, token stri
 	//query.Set("extend", "editorialVideo")
 	query.Set("l", language)
 	req.URL.RawQuery = query.Encode()
-	do, err := http.DefaultClient.Do(req)
+	do, err := apiClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -47,6 +47,9 @@ func GetMusicVideoResp(storefront string, id string, language string, token stri
 	err = json.NewDecoder(do.Body).Decode(&obj)
 	if err != nil {
 		return nil, err
+	}
+	if len(obj.Data) == 0 {
+		return nil, fmt.Errorf("music video %s not found", id)
 	}
 	return obj, nil
 }

@@ -72,7 +72,9 @@ convert-after-download: false     # Enable post-download conversion (requires ff
 convert-format: "flac"            # flac | mp3 | opus | wav | copy (no re-encode)
 convert-keep-original: false       # Keep original file after successful conversion
 convert-skip-if-source-matches: true  # If already in target format, skip
-ffmpeg-path: "ffmpeg"             # Override if ffmpeg is not in PATH
+ffmpeg-path: "ffmpeg"             # Override if ffmpeg is not in PATH; Apple Silicon Homebrew usually uses /opt/homebrew/bin/ffmpeg
+mp4box-path: "MP4Box"             # Override if MP4Box is not in PATH; Apple Silicon Homebrew usually uses /opt/homebrew/bin/MP4Box
+mp4decrypt-path: "mp4decrypt"     # Override if mp4decrypt is not in PATH; used for MV/station downloads
 convert-extra-args: ""            # Additional raw args appended (advanced)
 convert-with-metadata: true      # If true, keep the same metadata in converted files
 

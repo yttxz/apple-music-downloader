@@ -11,7 +11,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"
 
-	"main/utils/ampapi"
+	"apple-music-downloader/utils/ampapi"
 )
 
 type Album struct {
@@ -47,12 +47,20 @@ func (a *Album) GetResp(token, l string) error {
 		return errors.New("error getting album response")
 	}
 	a.Resp = *resp
+	if len(a.Resp.Data) == 0 {
+		return errors.New("album response contains no data")
+	}
+	tracks := a.Resp.Data[0].Relationships.Tracks.Data
+	if len(tracks) == 0 {
+		return errors.New("album contains no tracks")
+	}
 	//简化高频调用名称
 	a.Name = a.Resp.Data[0].Attributes.Name
 	//fmt.Println("Getting album response")
 	//从resp中的Tracks数据中提取trackData信息到新的Track结构体中
-	for i, trackData := range a.Resp.Data[0].Relationships.Tracks.Data {
-		len := len(a.Resp.Data[0].Relationships.Tracks.Data)
+	trackTotal := len(tracks)
+	discTotal := tracks[trackTotal-1].Attributes.DiscNumber
+	for i, trackData := range tracks {
 		a.Tracks = append(a.Tracks, Track{
 			ID:         trackData.ID,
 			Type:       trackData.Type,
@@ -63,14 +71,14 @@ func (a *Album) GetResp(token, l string) error {
 			//SaveDir:   filepath.Join(a.SaveDir, a.SaveName),
 			//Codec:     a.Codec,
 			TaskNum:   i + 1,
-			TaskTotal: len,
+			TaskTotal: trackTotal,
 			M3u8:      trackData.Attributes.ExtendedAssetUrls.EnhancedHls,
 			WebM3u8:   trackData.Attributes.ExtendedAssetUrls.EnhancedHls,
 			//CoverPath: a.CoverPath,
 
 			Resp:      trackData,
 			PreType:   "albums",
-			DiscTotal: a.Resp.Data[0].Relationships.Tracks.Data[len-1].Attributes.DiscNumber,
+			DiscTotal: discTotal,
 			PreID:     a.ID,
 			AlbumData: a.Resp.Data[0],
 		})
@@ -93,41 +101,34 @@ func (a *Album) ShowSelect() []int {
 	var data [][]string
 	for trackNum, track := range meta.Data[0].Relationships.Tracks.Data {
 		trackNum++
-		trackName := fmt.Sprintf("%02d. %s", track.Attributes.TrackNumber, track.Attributes.Name)
 		data = append(data, []string{fmt.Sprint(trackNum),
-			trackName,
+			formatTrackType(track.Type),
+			fmt.Sprintf("%02d", track.Attributes.TrackNumber),
+			track.Attributes.Name,
 			track.Attributes.ContentRating,
-			track.Type})
+		})
 
 	}
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"", "Track Name", "Rating", "Type"})
+	table.SetHeader([]string{"ID", "TYPE", "TRACK", "TITLE", "RATING"})
 	//table.SetFooter([]string{"", "", "Footer", "Footer4"})
 	table.SetRowLine(false)
+	table.SetAutoWrapText(false)
 	//table.SetAutoMergeCells(true)
 	table.SetCaption(true, fmt.Sprintf("Storefront: %s, %d tracks missing", strings.ToUpper(a.Storefront), meta.Data[0].Attributes.TrackCount-trackTotal))
 	table.SetHeaderColor(tablewriter.Colors{},
-		tablewriter.Colors{tablewriter.FgRedColor, tablewriter.Bold},
 		tablewriter.Colors{tablewriter.FgBlackColor, tablewriter.Bold},
+		tablewriter.Colors{tablewriter.FgBlackColor, tablewriter.Bold},
+		tablewriter.Colors{tablewriter.FgRedColor, tablewriter.Bold},
 		tablewriter.Colors{tablewriter.FgBlackColor, tablewriter.Bold})
 
 	table.SetColumnColor(tablewriter.Colors{tablewriter.FgCyanColor},
-		tablewriter.Colors{tablewriter.Bold, tablewriter.FgRedColor},
 		tablewriter.Colors{tablewriter.Bold, tablewriter.FgBlackColor},
+		tablewriter.Colors{tablewriter.Bold, tablewriter.FgBlackColor},
+		tablewriter.Colors{tablewriter.Bold, tablewriter.FgRedColor},
 		tablewriter.Colors{tablewriter.Bold, tablewriter.FgBlackColor})
 	for _, row := range data {
-		if row[2] == "explicit" {
-			row[2] = "E"
-		} else if row[2] == "clean" {
-			row[2] = "C"
-		} else {
-			row[2] = "None"
-		}
-		if row[3] == "music-videos" {
-			row[3] = "MV"
-		} else if row[3] == "songs" {
-			row[3] = "SONG"
-		}
+		row[4] = formatContentRating(row[4])
 		table.Append(row)
 	}
 	//table.AppendBulk(data)
@@ -190,4 +191,24 @@ func (a *Album) ShowSelect() []int {
 		}
 	}
 	return selected
+}
+
+func formatTrackType(trackType string) string {
+	if trackType == "music-videos" {
+		return "MV"
+	}
+	if trackType == "songs" {
+		return "SONG"
+	}
+	return strings.ToUpper(trackType)
+}
+
+func formatContentRating(rating string) string {
+	if rating == "explicit" {
+		return "E"
+	}
+	if rating == "clean" {
+		return "C"
+	}
+	return "-"
 }

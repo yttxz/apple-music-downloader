@@ -9,8 +9,8 @@ import (
 	"github.com/go-resty/resty/v2"
 	"google.golang.org/protobuf/proto"
 
-	cdm "main/utils/runv3/cdm"
-	key "main/utils/runv3/key"
+	cdm "apple-music-downloader/utils/runv3/cdm"
+	key "apple-music-downloader/utils/runv3/key"
 	"os"
 
 	"bytes"
@@ -24,10 +24,13 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/grafov/m3u8"
 	"github.com/schollz/progressbar/v3"
 )
+
+var songHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
 type PlaybackLicense struct {
 	ErrorCode  int    `json:"errorCode"`
@@ -125,7 +128,7 @@ func GetWebplayback(adamId string, authtoken string, mutoken string, mvmode bool
 	req.Header.Set("x-apple-music-user-token", mutoken)
 	// 创建 HTTP 客户端
 	//client := &http.Client{}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := songHTTPClient.Do(req)
 	// 发送请求
 	//resp, err := client.Do(req)
 	if err != nil {
@@ -172,7 +175,7 @@ type Songlist struct {
 }
 
 func extractKidBase64(b string, mvmode bool) (string, string, string, error) {
-	resp, err := http.Get(b)
+	resp, err := songHTTPClient.Get(b)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -196,9 +199,18 @@ func extractKidBase64(b string, mvmode bool) (string, string, string, error) {
 		mediaPlaylist := from.(*m3u8.MediaPlaylist)
 		if mediaPlaylist.Key != nil {
 			split := strings.Split(mediaPlaylist.Key.URI, ",")
+			if len(split) < 2 {
+				return "", "", "", errors.New("invalid media playlist key URI")
+			}
+			if mediaPlaylist.Map == nil || mediaPlaylist.Map.URI == "" {
+				return "", "", "", errors.New("media playlist missing init map")
+			}
+			lastSlashIndex := strings.LastIndex(b, "/")
+			if lastSlashIndex < 0 {
+				return "", "", "", errors.New("invalid media playlist URL")
+			}
 			uriPrefix = split[0]
 			kidbase64 = split[1]
-			lastSlashIndex := strings.LastIndex(b, "/")
 			// 截取最后一个斜杠之前的部分
 			urlBuilder.WriteString(b[:lastSlashIndex])
 			urlBuilder.WriteString("/")
@@ -225,13 +237,21 @@ func extractKidBase64(b string, mvmode bool) (string, string, string, error) {
 	}
 	return kidbase64, urlBuilder.String(), uriPrefix, nil
 }
-func extsong(b string) bytes.Buffer {
-	resp, err := http.Get(b)
+
+type progressReadCloser struct {
+	io.Reader
+	io.Closer
+}
+
+func openSongStream(b string) (io.ReadCloser, error) {
+	resp, err := songHTTPClient.Get(b)
 	if err != nil {
-		fmt.Printf("下载文件失败: %v\n", err)
+		return nil, fmt.Errorf("download file failed: %w", err)
 	}
-	defer resp.Body.Close()
-	var buffer bytes.Buffer
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, errors.New(resp.Status)
+	}
 	bar := progressbar.NewOptions64(
 		resp.ContentLength,
 		progressbar.OptionClearOnFinish(),
@@ -250,8 +270,31 @@ func extsong(b string) bytes.Buffer {
 			BarEnd:        "",
 		}),
 	)
-	io.Copy(io.MultiWriter(&buffer, bar), resp.Body)
-	return buffer
+	return &progressReadCloser{
+		Reader: io.TeeReader(resp.Body, bar),
+		Closer: resp.Body,
+	}, nil
+}
+
+func decryptSongToFile(body io.Reader, key []byte, trackpath string) error {
+	tempFile, err := os.CreateTemp(filepath.Dir(trackpath), "."+filepath.Base(trackpath)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temp output: %w", err)
+	}
+	tempPath := tempFile.Name()
+	defer os.Remove(tempPath)
+
+	if err := DecryptMP4(body, key, tempFile); err != nil {
+		tempFile.Close()
+		return err
+	}
+	if err := tempFile.Close(); err != nil {
+		return fmt.Errorf("close temp output: %w", err)
+	}
+	if err := os.Rename(tempPath, trackpath); err != nil {
+		return fmt.Errorf("replace output: %w", err)
+	}
+	return nil
 }
 func Run(adamId string, trackpath string, authtoken string, mutoken string, mvmode bool, serverUrl string) (string, error) {
 	var keystr string //for mv key
@@ -310,31 +353,19 @@ func Run(adamId string, trackpath string, authtoken string, mutoken string, mvmo
 		keyAndUrls := "1:" + keystr + ";" + fileurl
 		return keyAndUrls, nil
 	}
-	body := extsong(fileurl)
-	fmt.Print("Downloaded\n")
-	//bodyReader := bytes.NewReader(body)
-	var buffer bytes.Buffer
+	body, err := openSongStream(fileurl)
+	if err != nil {
+		return "", err
+	}
+	defer body.Close()
 
-	err = DecryptMP4(&body, keybt, &buffer)
+	err = decryptSongToFile(body, keybt, trackpath)
 	if err != nil {
 		fmt.Print("Decryption failed\n")
 		return "", err
-	} else {
-		fmt.Print("Decrypted\n")
 	}
-	// create output file
-	ofh, err := os.Create(trackpath)
-	if err != nil {
-		fmt.Printf("创建文件失败: %v\n", err)
-		return "", err
-	}
-	defer ofh.Close()
-
-	_, err = ofh.Write(buffer.Bytes())
-	if err != nil {
-		fmt.Printf("写入文件失败: %v\n", err)
-		return "", err
-	}
+	fmt.Print("Downloaded\n")
+	fmt.Print("Decrypted\n")
 	return "", nil
 }
 
@@ -427,11 +458,15 @@ func fileWriter(wg *sync.WaitGroup, segmentsChan <-chan Segment, outputFile io.W
 	}
 }
 
-func ExtMvData(keyAndUrls string, savePath string) error {
+func ExtMvData(keyAndUrls string, savePath string, mp4DecryptPath ...string) error {
 	segments := strings.Split(keyAndUrls, ";")
 	key := segments[0]
 	//fmt.Println(key)
 	urls := segments[1:]
+	decryptTool := "mp4decrypt"
+	if len(mp4DecryptPath) > 0 && strings.TrimSpace(mp4DecryptPath[0]) != "" {
+		decryptTool = mp4DecryptPath[0]
+	}
 	tempFile, err := os.CreateTemp("", "enc_mv_data-*.mp4")
 	if err != nil {
 		fmt.Printf("创建文件失败：%v\n", err)
@@ -484,7 +519,7 @@ func ExtMvData(keyAndUrls string, savePath string) error {
 	}
 	fmt.Println("\nDownloaded.")
 
-	cmd1 := exec.Command("mp4decrypt", "--key", key, tempFile.Name(), filepath.Base(savePath))
+	cmd1 := exec.Command(decryptTool, "--key", key, tempFile.Name(), filepath.Base(savePath))
 	cmd1.Dir = filepath.Dir(savePath) //设置mp4decrypt的工作目录以解决中文路径错误
 	outlog, err := cmd1.CombinedOutput()
 	if err != nil {

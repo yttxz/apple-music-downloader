@@ -12,7 +12,7 @@ import (
 	//"github.com/fatih/color"
 	//"github.com/olekukonko/tablewriter"
 
-	"main/utils/ampapi"
+	"apple-music-downloader/utils/ampapi"
 )
 
 type Station struct {
@@ -48,6 +48,9 @@ func (a *Station) GetResp(mutoken, token, l string) error {
 		return errors.New("error getting station response")
 	}
 	a.Resp = *resp
+	if len(a.Resp.Data) == 0 {
+		return errors.New("station response contains no data")
+	}
 	//简化高频调用名称
 	a.Type = a.Resp.Data[0].Attributes.PlayParams.Format
 	a.Name = a.Resp.Data[0].Attributes.Name
@@ -67,6 +70,10 @@ func (a *Station) GetResp(mutoken, token, l string) error {
 			continue
 		}
 		albumLen := len(albumResp.Data[0].Relationships.Tracks.Data)
+		if albumLen == 0 {
+			fmt.Println("Error getting album response: album contains no tracks")
+			continue
+		}
 		a.Tracks = append(a.Tracks, Track{
 			ID:         trackData.ID,
 			Type:       trackData.Type,
@@ -88,8 +95,9 @@ func (a *Station) GetResp(mutoken, token, l string) error {
 			PreID:     a.ID,
 			AlbumData: albumResp.Data[0],
 		})
-		a.Tracks[i].PlaylistData.Attributes.Name = a.Name
-		a.Tracks[i].PlaylistData.Attributes.ArtistName = "Apple Music Station"
+		trackIndex := len(a.Tracks) - 1
+		a.Tracks[trackIndex].PlaylistData.Attributes.Name = a.Name
+		a.Tracks[trackIndex].PlaylistData.Attributes.ArtistName = "Apple Music Station"
 	}
 	return nil
 }

@@ -25,13 +25,13 @@
 2. **逐词与未同步歌词** 支持
 3. **歌手专辑下载** - 自动下载歌手的所有专辑
    ```bash
-   go run main.go https://music.apple.com/us/artist/taylor-swift/159260351 --all-album
+   go run . https://music.apple.com/us/artist/taylor-swift/159260351 --all-album
    ```
 4. **流式解密** - 使用 Sendy McSenderson 的代码实现边下载边解密，解决大文件解密时内存不足问题
 5. **MV 下载** - 需要安装 mp4decrypt
 6. **交互式搜索** - 支持方向键导航搜索结果
    ```bash
-   go run main.go --search [song/album/artist] "search_term"
+   go run . --search [song/album/artist] "search_term"
    ```
 
 ---
@@ -53,6 +53,40 @@
 ---
 
 ## 🚀 使用方法
+
+### 原生 macOS (Apple Silicon / arm64)
+
+1. 使用 Homebrew 安装原生 arm64 依赖：
+
+   ```bash
+   brew install go ffmpeg gpac bento4
+   ```
+
+   `gpac` 提供 `MP4Box`；`bento4` 提供 MV/电台下载所需的 `mp4decrypt`。
+
+2. 构建原生 macOS arm64 包：
+
+   ```bash
+   make package-macos-arm64
+   ```
+
+   生成结果位于 `dist/darwin-arm64/`，压缩包位于 `dist/apple-music-dl-darwin-arm64.tar.gz`。
+
+3. 运行：
+
+   ```bash
+   cd dist/darwin-arm64
+   ./apple-music-dl --help
+   ./apple-music-dl https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511
+   ```
+
+   程序会自动检查 `/opt/homebrew/bin` 等常见 Apple Silicon Homebrew 路径。如果工具安装在其他位置，可以在 `config.yaml` 中设置：
+
+   ```yaml
+   ffmpeg-path: "/opt/homebrew/bin/ffmpeg"
+   mp4box-path: "/opt/homebrew/bin/MP4Box"
+   mp4decrypt-path: "/opt/homebrew/bin/mp4decrypt"
+   ```
 
 ### 使用 Docker 运行
 
@@ -104,42 +138,42 @@ docker run --network host -v ./downloads:/downloads -v ./config.yaml:/app/config
 
 2. **下载专辑：**
    ```bash
-   go run main.go https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511
+   go run . https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511
    ```
 
 3. **下载单曲：**
    ```bash
-   go run main.go --song https://music.apple.com/us/album/never-gonna-give-you-up-2022-remaster/1624945511?i=1624945512
+   go run . --song https://music.apple.com/us/album/never-gonna-give-you-up-2022-remaster/1624945511?i=1624945512
    # 或
-   go run main.go https://music.apple.com/us/song/you-move-me-2022-remaster/1624945520
+   go run . https://music.apple.com/us/song/you-move-me-2022-remaster/1624945520
    ```
 
 4. **交互式选择：**
    ```bash
-   go run main.go --select https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511
+   go run . --select https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511
    ```
    输入以空格分隔的曲目编号。
 
 5. **下载播放列表：**
    ```bash
-   go run main.go https://music.apple.com/us/playlist/taylor-swift-essentials/pl.3950454ced8c45a3b0cc693c2a7db97b
+   go run . https://music.apple.com/us/playlist/taylor-swift-essentials/pl.3950454ced8c45a3b0cc693c2a7db97b
    # 或
-   go run main.go https://music.apple.com/us/playlist/hi-res-lossless-24-bit-192khz/pl.u-MDAWvpjt38370N
+   go run . https://music.apple.com/us/playlist/hi-res-lossless-24-bit-192khz/pl.u-MDAWvpjt38370N
    ```
 
 6. **杜比全景声：**
    ```bash
-   go run main.go --atmos https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
+   go run . --atmos https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
    ```
 
 7. **AAC 格式：**
    ```bash
-   go run main.go --aac https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
+   go run . --aac https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
    ```
 
 8. **查看音质信息：**
    ```bash
-   go run main.go --debug https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
+   go run . --debug https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
    ```
 
 📖 [中文教程 - 详见方法三](https://telegra.ph/Apple-Music-Alac%E9%AB%98%E8%A7%A3%E6%9E%90%E5%BA%A6%E6%97%A0%E6%8D%9F%E9%9F%B3%E4%B9%90%E4%B8%8B%E8%BD%BD%E6%95%99%E7%A8%8B-04-02-2)
