@@ -1,7 +1,11 @@
 *
+!.dockerignore
 !/config.yaml.example
 !/go.mod
 !/go.sum
-!/main.go
+!/*.go
 !/utils/
 !/utils/**
+
+.DS_Store
+**/.DS_Store
