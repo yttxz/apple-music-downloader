@@ -25,13 +25,7 @@ func resolveCollectionCodecAndQuality(state *sessionState, folderFormat string, 
 		return "AAC", "256Kbps"
 	}
 
-	m3u8URL := manifest.Data[0].Attributes.ExtendedAssetUrls.EnhancedHls
-	if shouldCheckEnhancedHLS(firstTrack.Attributes.AudioTraits) {
-		enhancedURL, _ := checkM3u8(firstTrack.ID, "album")
-		if strings.HasSuffix(enhancedURL, ".m3u8") {
-			m3u8URL = enhancedURL
-		}
-	}
+	m3u8URL := preferredEnhancedHLS(firstTrack.ID, manifest.Data[0].Attributes.ExtendedAssetUrls.EnhancedHls, firstTrack.Attributes.AudioTraits, "album", false)
 	_, quality, err := extractMedia(state, m3u8URL, true)
 	if err != nil {
 		fmt.Println("Failed to extract quality from manifest.\n", err)
@@ -55,4 +49,18 @@ func qualityFromSelectedMode(state *sessionState) (string, bool) {
 func shouldCheckEnhancedHLS(audioTraits []string) bool {
 	return Config.GetM3u8Mode == "all" ||
 		(Config.GetM3u8Mode == "hires" && contains(audioTraits, "hi-res-lossless"))
+}
+
+func preferredEnhancedHLS(trackID string, fallbackURL string, audioTraits []string, wrapperMode string, warnOnFallback bool) string {
+	if !shouldCheckEnhancedHLS(audioTraits) {
+		return fallbackURL
+	}
+	fullM3u8URL, err := checkM3u8(trackID, wrapperMode)
+	if err == nil && strings.HasSuffix(fullM3u8URL, ".m3u8") {
+		return fullM3u8URL
+	}
+	if warnOnFallback {
+		fmt.Println("Failed to get best quality m3u8 from device m3u8 port, will use m3u8 from Web API")
+	}
+	return fallbackURL
 }
