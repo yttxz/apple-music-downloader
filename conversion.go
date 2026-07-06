@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"apple-music-downloader/utils/task"
+
+	"github.com/kballard/go-shellquote"
 )
 
 // CONVERSION FEATURE: Determine if source codec is lossy (rough heuristic by extension/codec name).
@@ -53,8 +55,11 @@ func buildFFmpegArgs(ffmpegPath, inPath, outPath, targetFmt, extraArgs string) (
 		return nil, fmt.Errorf("unsupported convert-format: %s", targetFmt)
 	}
 	if extraArgs != "" {
-		// naive split; for complex quoting you could enhance
-		args = append(args, strings.Fields(extraArgs)...)
+		parsed, err := shellquote.Split(extraArgs)
+		if err != nil {
+			return nil, fmt.Errorf("invalid convert-extra-args: %w", err)
+		}
+		args = append(args, parsed...)
 	}
 	args = append(args, outPath)
 	return args, nil
@@ -90,6 +95,12 @@ func convertIfNeeded(track *task.Track) {
 
 	outBase := strings.TrimSuffix(srcPath, ext)
 	outPath := outBase + "." + targetFmt
+	tempOutPath, cleanup, err := tempPathInDestination(outPath)
+	if err != nil {
+		fmt.Println("Conversion temp file error:", err)
+		return
+	}
+	defer cleanup(false)
 
 	// Handle lossy -> lossless cases: optionally skip or warn
 	if (targetFmt == "flac" || targetFmt == "wav") && isLossySource(ext, track.Codec) {
@@ -107,7 +118,7 @@ func convertIfNeeded(track *task.Track) {
 		return
 	}
 
-	args, err := buildFFmpegArgs(Config.FFmpegPath, srcPath, outPath, targetFmt, Config.ConvertExtraArgs)
+	args, err := buildFFmpegArgs(Config.FFmpegPath, srcPath, tempOutPath, targetFmt, Config.ConvertExtraArgs)
 	if err != nil {
 		fmt.Println("Conversion config error:", err)
 		return
@@ -138,8 +149,7 @@ func convertIfNeeded(track *task.Track) {
 			} else {
 				fmt.Println("Convert removed due to the bad ALAC.")
 				log := stderr
-				err = os.WriteFile(logPath, log.Bytes(), 0644)
-				if err != nil {
+				if err := writeBytesAtomic(logPath, log.Bytes(), 0644); err != nil {
 					fmt.Println("Convert logs:", log)
 				} else {
 					fmt.Println("Convert logs are stored in:", logPath)
@@ -147,6 +157,11 @@ func convertIfNeeded(track *task.Track) {
 			}
 		}
 	} else {
+		if err := renameTempIntoPlace(tempOutPath, outPath); err != nil {
+			fmt.Println("Failed to finalize conversion:", err)
+			return
+		}
+		cleanup(true)
 		fmt.Printf("Conversion completed in %s: %s\n", time.Since(start).Truncate(time.Millisecond), filepath.Base(outPath))
 
 		if !Config.ConvertKeepOriginal {

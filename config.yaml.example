@@ -25,6 +25,25 @@ get-m3u8-from-device: true
 # set to 'true' to exit on error instead of requiring manual intervention. (for using this program in scripts)
 exit-on-error: false
 
+# State, safety and retry settings
+database-enabled: true
+database-path: "amdl.db"
+failed-downloads-enabled: true
+download-concurrency: 1       # Keep serial by default for wrapper compatibility
+mv-segment-concurrency: 6
+requests-per-minute: 60       # Set -1 for no rate limit
+retry-count: 3
+retry-backoff-ms: 500
+request-timeout-seconds: 30
+allow-nonlocal-wrapper: false # Keep wrapper ports loopback-only by default
+quality-fallback: "skip"      # skip | best-available
+
+# Artist discography filters
+artist-filter-singles-eps: false
+artist-filter-live: false
+artist-filter-compilations: false
+artist-filter-duplicates: false
+
 #set 'all' to retrieve all m3u8, and set 'hires' to only detect hires m3u8.
 get-m3u8-mode: hires # all hires
 aac-type: aac-lc # aac-lc aac aac-binaural aac-downmix

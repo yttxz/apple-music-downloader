@@ -1,6 +1,7 @@
 package ampapi
 
 import (
+	"apple-music-downloader/utils/httpx"
 	"errors"
 	"net/http"
 	"time"
@@ -12,6 +13,10 @@ const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 
 
 var apiClient = &http.Client{
 	Timeout: 30 * time.Second,
+}
+
+func ConfigureHTTPClient(config httpx.RetryConfig) {
+	apiClient = httpx.NewClient(config)
 }
 
 func setCatalogHeaders(req *http.Request, token string) {

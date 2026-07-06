@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // alacfix.go — Patch malformed ALAC packets in an .m4a/.mp4 file in place.
@@ -736,7 +737,7 @@ func Run(path string, force bool, outPath ...string) error {
 	}
 
 	if patched > 0 || force {
-		if err := os.WriteFile(dst, data, 0644); err != nil {
+		if err := writeFileAtomic(dst, data, 0644); err != nil {
 			return err
 		}
 		fmt.Printf("Patched %d packet(s).\n", patched)
@@ -745,5 +746,42 @@ func Run(path string, force bool, outPath ...string) error {
 				r.trackID, r.idx, r.off, r.size, r.bodyEndBit, r.bodyEndBit, r.size*8)
 		}
 	}
+	return nil
+}
+
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	cleanup = false
 	return nil
 }

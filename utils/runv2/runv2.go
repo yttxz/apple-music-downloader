@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"time"
 
 	"apple-music-downloader/utils/structs"
@@ -46,10 +47,18 @@ func (b *TimedResponseBody) Read(p []byte) (int, error) {
 
 func Run(adamId string, playlistUrl string, outfile string, Config structs.ConfigSet) error {
 	var err error
-	var optstimeout uint
-	optstimeout = 0
-	timeout := time.Duration(optstimeout * uint(time.Millisecond))
+	timeout := time.Duration(Config.RequestTimeoutSeconds) * time.Second
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
 	header := make(http.Header)
+	tempFile, err := os.CreateTemp(filepath.Dir(outfile), "."+filepath.Base(outfile)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tempOutfile := tempFile.Name()
+	_ = tempFile.Close()
+	defer os.Remove(tempOutfile)
 
 	// request media playlist
 	req, err := http.NewRequest("GET", playlistUrl, nil)
@@ -97,55 +106,38 @@ func Run(adamId string, playlistUrl string, outfile string, Config structs.Confi
 
 	var body io.Reader
 	client := &http.Client{Timeout: timeout}
-	if optstimeout > 0 {
-		// create the timer before calling Do so that the timeout covers TCP handshake,
-		// TLS handshake, sending the request and receiving HTTP headers
-		timer := time.AfterFunc(timeout, func() { cancel(ErrTimeout) })
-		do, err = client.Do(req)
-		if err != nil {
+	do, err = client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer do.Body.Close()
+	if do.ContentLength >= 0 && do.ContentLength < int64(Config.MaxMemoryLimit*1024*1024) {
+		var buffer bytes.Buffer
+		bar := progressbar.NewOptions64(
+			do.ContentLength,
+			progressbar.OptionClearOnFinish(),
+			progressbar.OptionSetElapsedTime(false),
+			progressbar.OptionSetPredictTime(false),
+			progressbar.OptionShowElapsedTimeOnFinish(),
+			progressbar.OptionShowCount(),
+			progressbar.OptionEnableColorCodes(true),
+			progressbar.OptionShowBytes(true),
+			progressbar.OptionSetDescription("Downloading..."),
+			progressbar.OptionSetTheme(progressbar.Theme{
+				Saucer:        "",
+				SaucerHead:    "",
+				SaucerPadding: "",
+				BarStart:      "",
+				BarEnd:        "",
+			}),
+		)
+		if _, err := io.Copy(io.MultiWriter(&buffer, bar), do.Body); err != nil {
 			return err
 		}
-		defer do.Body.Close()
-		body = &TimedResponseBody{
-			timeout:   timeout,
-			timer:     timer,
-			threshold: 256,
-			body:      do.Body,
-		}
+		body = &buffer
+		fmt.Print("Downloaded\n")
 	} else {
-		do, err = client.Do(req)
-		if err != nil {
-			return err
-		}
-		defer do.Body.Close()
-		if do.ContentLength >= 0 && do.ContentLength < int64(Config.MaxMemoryLimit*1024*1024) {
-			var buffer bytes.Buffer
-			bar := progressbar.NewOptions64(
-				do.ContentLength,
-				progressbar.OptionClearOnFinish(),
-				progressbar.OptionSetElapsedTime(false),
-				progressbar.OptionSetPredictTime(false),
-				progressbar.OptionShowElapsedTimeOnFinish(),
-				progressbar.OptionShowCount(),
-				progressbar.OptionEnableColorCodes(true),
-				progressbar.OptionShowBytes(true),
-				progressbar.OptionSetDescription("Downloading..."),
-				progressbar.OptionSetTheme(progressbar.Theme{
-					Saucer:        "",
-					SaucerHead:    "",
-					SaucerPadding: "",
-					BarStart:      "",
-					BarEnd:        "",
-				}),
-			)
-			if _, err := io.Copy(io.MultiWriter(&buffer, bar), do.Body); err != nil {
-				return err
-			}
-			body = &buffer
-			fmt.Print("Downloaded\n")
-		} else {
-			body = do.Body
-		}
+		body = do.Body
 	}
 
 	var totalLen int64
@@ -160,8 +152,11 @@ func Run(adamId string, playlistUrl string, outfile string, Config structs.Confi
 	//fmt.Print("Decrypting...\n")
 	defer Close(conn)
 
-	err = downloadAndDecryptFile(conn, body, outfile, adamId, segments, totalLen, Config)
+	err = downloadAndDecryptFile(conn, body, tempOutfile, adamId, segments, totalLen, Config)
 	if err != nil {
+		return err
+	}
+	if err := os.Rename(tempOutfile, outfile); err != nil {
 		return err
 	}
 	fmt.Print("Decrypted\n")

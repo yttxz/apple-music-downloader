@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -29,6 +28,9 @@ func writeCover(sanAlbumFolder, name string, url string) (string, error) {
 		covPath = filepath.Join(sanAlbumFolder, name+"."+ext)
 	} else {
 		covPath = filepath.Join(sanAlbumFolder, name+"."+Config.CoverFormat)
+	}
+	if dry_run {
+		return covPath, nil
 	}
 	exists, err := fileExists(covPath)
 	if err != nil {
@@ -93,13 +95,7 @@ func writeCover(sanAlbumFolder, name string, url string) (string, error) {
 			return "", errors.New(do.Status)
 		}
 	}
-	f, err := os.Create(covPath)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	_, err = io.Copy(f, do.Body)
-	if err != nil {
+	if err := copyToFileAtomic(covPath, 0644, do.Body); err != nil {
 		return "", err
 	}
 	return covPath, nil
@@ -107,14 +103,8 @@ func writeCover(sanAlbumFolder, name string, url string) (string, error) {
 
 func writeLyrics(sanAlbumFolder, filename string, lrc string) error {
 	lyricspath := filepath.Join(sanAlbumFolder, filename)
-	f, err := os.Create(lyricspath)
-	if err != nil {
-		return err
+	if dry_run {
+		return nil
 	}
-	defer f.Close()
-	_, err = f.WriteString(lrc)
-	if err != nil {
-		return err
-	}
-	return nil
+	return writeStringAtomic(lyricspath, lrc, 0644)
 }

@@ -9,19 +9,32 @@ import (
 
 func validConfigForTest() structs.ConfigSet {
 	return structs.ConfigSet{
-		CoverFormat:    "jpg",
-		LrcType:        "lyrics",
-		LrcFormat:      "lrc",
-		GetM3u8Mode:    "hires",
-		AacType:        "aac-lc",
-		MVAudioType:    "atmos",
-		ConvertFormat:  "flac",
-		MaxMemoryLimit: 256,
-		LimitMax:       200,
-		AlacMax:        192000,
-		AtmosMax:       2768,
-		MVMax:          2160,
-		CoverSize:      "5000x5000",
+		CoverFormat:           "jpg",
+		LrcType:               "lyrics",
+		LrcFormat:             "lrc",
+		GetM3u8Mode:           "hires",
+		AacType:               "aac-lc",
+		MVAudioType:           "atmos",
+		ConvertFormat:         "flac",
+		MaxMemoryLimit:        256,
+		LimitMax:              200,
+		AlacMax:               192000,
+		AtmosMax:              2768,
+		MVMax:                 2160,
+		CoverSize:             "5000x5000",
+		AlacSaveFolder:        "AM-DL downloads",
+		AtmosSaveFolder:       "AM-DL-Atmos downloads",
+		AacSaveFolder:         "AM-DL-AAC downloads",
+		MVSaveFolder:          "AM-DL-MV downloads",
+		DecryptM3u8Port:       "127.0.0.1:10020",
+		GetM3u8Port:           "127.0.0.1:20020",
+		DownloadConcurrency:   1,
+		MVSegmentConcurrency:  6,
+		RequestsPerMinute:     60,
+		RetryCount:            3,
+		RetryBackoffMS:        500,
+		RequestTimeoutSeconds: 30,
+		QualityFallback:       "skip",
 	}
 }
 
@@ -62,6 +75,21 @@ func TestValidateConfigRejectsInvalidValues(t *testing.T) {
 			name:    "cover size",
 			mutate:  func(c *structs.ConfigSet) { c.CoverSize = " " },
 			wantErr: "cover-size",
+		},
+		{
+			name:    "wrapper port",
+			mutate:  func(c *structs.ConfigSet) { c.DecryptM3u8Port = "0.0.0.0:10020" },
+			wantErr: "decrypt-m3u8-port",
+		},
+		{
+			name:    "convert extra args",
+			mutate:  func(c *structs.ConfigSet) { c.ConvertExtraArgs = "-i evil.m4a" },
+			wantErr: "convert-extra-args",
+		},
+		{
+			name:    "quality fallback",
+			mutate:  func(c *structs.ConfigSet) { c.QualityFallback = "always" },
+			wantErr: "quality-fallback",
 		},
 	}
 

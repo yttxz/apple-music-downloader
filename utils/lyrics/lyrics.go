@@ -1,6 +1,7 @@
 package lyrics
 
 import (
+	"apple-music-downloader/utils/httpx"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,10 @@ import (
 )
 
 var lyricsHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
+func ConfigureHTTPClient(config httpx.RetryConfig) {
+	lyricsHTTPClient = httpx.NewClient(config)
+}
 
 type SongLyrics struct {
 	Data []struct {

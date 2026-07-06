@@ -1,28 +1,19 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
 	"apple-music-downloader/utils/task"
 )
 
-func currentCodec() string {
-	if dl_atmos {
-		return "ATMOS"
-	}
-	if dl_aac {
-		return "AAC"
-	}
-	return "ALAC"
-}
-
-func saveFolderForCurrentCodec(folderName string) string {
+func saveFolderForCurrentCodec(state *sessionState, folderName string) string {
 	root := Config.AlacSaveFolder
-	if dl_atmos {
+	if state != nil && state.isAtmosMode() {
 		root = Config.AtmosSaveFolder
 	}
-	if dl_aac {
+	if state != nil && state.isAACMode() {
 		root = Config.AacSaveFolder
 	}
 	return filepath.Join(root, forbiddenNames.ReplaceAllString(folderName, "_"))
@@ -60,8 +51,29 @@ func addedTrackForPath(track *task.Track, path string) AddedTrack {
 	}
 }
 
-func markTrackSuccess(track *task.Track, path string) {
-	session.Counter.Success++
-	session.OKDict[track.PreID] = append(session.OKDict[track.PreID], track.TaskNum)
-	session.AddedTracks = append(session.AddedTracks, addedTrackForPath(track, path))
+func markTrackSuccess(state *sessionState, track *task.Track, path string) {
+	state.Counter.Success++
+	state.OKDict[track.PreID] = append(state.OKDict[track.PreID], track.TaskNum)
+	state.AddedTracks = append(state.AddedTracks, addedTrackForPath(track, path))
+	item := trackDBItem(state, track, path)
+	recordDownload(item)
+}
+
+func markTrackSkipped(state *sessionState, track *task.Track, path string, reason string) {
+	state.Counter.Success++
+	state.OKDict[track.PreID] = append(state.OKDict[track.PreID], track.TaskNum)
+	state.AddedTracks = append(state.AddedTracks, addedTrackForPath(track, path))
+	item := trackDBItem(state, track, path)
+	if reason == "file-exists" {
+		if appDB != nil && !no_database {
+			if err := appDB.RecordDownload(item); err != nil {
+				fmt.Println("Failed to record existing file:", err)
+			}
+		}
+	}
+	recordSkip(item, reason)
+}
+
+func markTrackFailure(state *sessionState, track *task.Track, err error) {
+	recordFailure(trackDBItem(state, track, plannedTrackPath(track, "")), err)
 }

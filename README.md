@@ -33,6 +33,10 @@
    ```bash
    go run . --search [song/album/artist] "search_term"
    ```
+7. **Durable Download Database** - Completed and failed items are recorded in SQLite so repeat runs can skip known downloads and repair failures
+8. **Safer Output Writes** - Media, covers, lyrics, playlists, conversions, and MV mux output are written through temporary files before replacing final files
+9. **Batch & Streamrip-style Workflows** - Use URL files, direct Apple IDs, dry runs, JSON summaries, doctor checks, and DB inspection commands
+10. **Controlled Parallel Downloads** - `download-concurrency` now runs top-level URL jobs in parallel while keeping interactive `--select` mode serial
 
 ---
 
@@ -137,6 +141,8 @@ docker run --network host -v ./downloads:/downloads -v ./config.yaml:/app/config
 
 ### Running Locally (Go)
 
+If you installed the packaged wrapper command, replace `go run .` with `amdl` in the examples below.
+
 1. Ensure the [wrapper](https://github.com/WorldObservationLog/wrapper) decryption program is running
 
 2. **Download albums:**
@@ -186,7 +192,131 @@ docker run --network host -v ./downloads:/downloads -v ./config.yaml:/app/config
    go run . --debug https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
    ```
 
+10. **Use a specific config file:**
+    ```bash
+    go run . --config config.yaml https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511
+    ```
+
+11. **Validate setup before downloading:**
+    ```bash
+    go run . --config config.yaml --config-validate
+    go run . --config config.yaml --doctor
+    ```
+
+12. **Preview without writing media files:**
+    ```bash
+    go run . --config config.yaml --dry-run --json-summary https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511
+    ```
+
+13. **Download from a batch file:**
+    ```bash
+    # urls.txt can contain one URL per line
+    go run . --config config.yaml --file urls.txt --json-summary
+    ```
+
+14. **Download by Apple Music ID:**
+    ```bash
+    go run . --config config.yaml --id-type album --id 1624945511 --storefront us
+    go run . --config config.yaml --id-type song --id 1624945520 --storefront us --json-summary
+    ```
+
 📖 [Chinese Tutorial (Method 3)](https://telegra.ph/Apple-Music-Alac%E9%AB%98%E8%A7%A3%E6%9E%90%E5%BA%A6%E6%97%A0%E6%8D%9F%E9%9F%B3%E4%B9%90%E4%B8%8B%E8%BD%BD%E6%95%99%E7%A8%8B-04-02-2)
+
+---
+
+## 🧰 Reliability & Workflow Commands
+
+### Database-backed skips and repair
+
+By default, this fork creates `amdl.db` next to the active config/runtime directory. Downloads are recorded only after post-processing succeeds. Failed items are stored separately and can be retried later.
+
+```bash
+# List completed records
+go run . --config config.yaml --db-list downloads
+
+# List failed records
+go run . --config config.yaml --db-list failed
+
+# Retry only failed records
+go run . --config config.yaml --repair --json-summary
+
+# Disable database use for one run
+go run . --config config.yaml --no-db "https://music.apple.com/us/album/example/123"
+```
+
+If a track already exists locally, a repeat run records it as `file-exists` and backfills the database where possible. This makes old downloads visible to future skip checks.
+
+### JSON summary
+
+Use `--json-summary` for automation-friendly output:
+
+```bash
+go run . --config config.yaml --json-summary --file urls.txt
+```
+
+The summary contains `started_at`, `completed_at`, `counts`, `downloaded`, `skipped`, and `failed`. Each item includes storefront, media type, Apple ID, codec, quality, path, reason, and error when available.
+
+The older `--json` flag is still kept for compatibility and prints the added-tracks array.
+
+### Parallel downloads
+
+`download-concurrency` controls how many top-level URLs are processed at once:
+
+```yaml
+download-concurrency: 3
+```
+
+Then run a batch:
+
+```bash
+go run . --config config.yaml --file urls.txt --json-summary
+```
+
+Notes:
+
+- Default remains `1` for compatibility.
+- `--select` is interactive and automatically uses concurrency `1`.
+- MV segments use a separate `mv-segment-concurrency` setting.
+- Keep `requests-per-minute`, `retry-count`, and `request-timeout-seconds` conservative if you raise concurrency.
+
+### Search workflows
+
+```bash
+# Download the first search result
+go run . --config config.yaml --search song "artist title" --search-first
+
+# Save search results without downloading
+go run . --config config.yaml --search album "album title" --search-output results.json
+```
+
+---
+
+## ⚙️ Important Config Keys
+
+Newer safety and workflow defaults are included in `config.yaml.example`:
+
+```yaml
+database-enabled: true
+database-path: "amdl.db"
+failed-downloads-enabled: true
+
+download-concurrency: 1
+mv-segment-concurrency: 6
+requests-per-minute: 60
+retry-count: 3
+retry-backoff-ms: 500
+request-timeout-seconds: 30
+
+allow-nonlocal-wrapper: false
+quality-fallback: "skip"      # skip | best-available
+
+artist-filter-singles-eps: false
+artist-filter-live: false
+artist-filter-compilations: false
+artist-filter-duplicates: false
+```
+
+Wrapper ports are loopback-only by default. If you intentionally expose wrapper ports beyond localhost, set `allow-nonlocal-wrapper: true`, but do this only on a trusted network.
 
 ---
 

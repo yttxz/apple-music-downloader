@@ -26,11 +26,23 @@ import (
 	"sync"
 	"time"
 
+	"apple-music-downloader/utils/httpx"
 	"github.com/grafov/m3u8"
 	"github.com/schollz/progressbar/v3"
 )
 
 var songHTTPClient = &http.Client{Timeout: 30 * time.Second}
+var mvSegmentConcurrency = 6
+
+func ConfigureHTTPClient(config httpx.RetryConfig) {
+	songHTTPClient = httpx.NewClient(config)
+}
+
+func ConfigureMVSegmentConcurrency(value int) {
+	if value > 0 {
+		mvSegmentConcurrency = value
+	}
+}
 
 type PlaybackLicense struct {
 	ErrorCode  int    `json:"errorCode"`
@@ -478,10 +490,9 @@ func ExtMvData(keyAndUrls string, savePath string, mp4DecryptPath ...string) err
 	var downloadWg, writerWg sync.WaitGroup
 	segmentsChan := make(chan Segment, len(urls))
 	// --- 新增代码: 定义最大并发数 ---
-	const maxConcurrency = 10
 	// --- 新增代码: 创建带缓冲的 Channel 作为信号量 ---
-	limiter := make(chan struct{}, maxConcurrency)
-	client := &http.Client{}
+	limiter := make(chan struct{}, mvSegmentConcurrency)
+	client := songHTTPClient
 
 	// 初始化进度条
 	bar := progressbar.DefaultBytes(-1, "Downloading...")
@@ -519,7 +530,16 @@ func ExtMvData(keyAndUrls string, savePath string, mp4DecryptPath ...string) err
 	}
 	fmt.Println("\nDownloaded.")
 
-	cmd1 := exec.Command(decryptTool, "--key", key, tempFile.Name(), filepath.Base(savePath))
+	outTemp, err := os.CreateTemp(filepath.Dir(savePath), "."+filepath.Base(savePath)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	outTempPath := outTemp.Name()
+	_ = outTemp.Close()
+	_ = os.Remove(outTempPath)
+	defer os.Remove(outTempPath)
+
+	cmd1 := exec.Command(decryptTool, "--key", key, tempFile.Name(), filepath.Base(outTempPath))
 	cmd1.Dir = filepath.Dir(savePath) //设置mp4decrypt的工作目录以解决中文路径错误
 	outlog, err := cmd1.CombinedOutput()
 	if err != nil {
@@ -528,6 +548,9 @@ func ExtMvData(keyAndUrls string, savePath string, mp4DecryptPath ...string) err
 		return err
 	} else {
 		fmt.Println("Decrypted.")
+	}
+	if err := os.Rename(outTempPath, savePath); err != nil {
+		return err
 	}
 	return nil
 }
