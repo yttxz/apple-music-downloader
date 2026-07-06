@@ -1092,7 +1092,9 @@ func ripStation(state *sessionState, albumId string, token string, storefront st
 		fmt.Println(singerFoldername)
 	}
 	singerFolder := saveFolderForCurrentCodec(state, singerFoldername)
-	os.MkdirAll(singerFolder, 0755)
+	if err := ensureDir(singerFolder); err != nil {
+		return fmt.Errorf("create station artist folder %s: %w", singerFolder, err)
+	}
 	station.SaveDir = singerFolder
 
 	playlistFolder := strings.NewReplacer(
@@ -1105,7 +1107,9 @@ func ripStation(state *sessionState, albumId string, token string, storefront st
 	).Replace(Config.PlaylistFolderFormat)
 	playlistFolder = cleanFolderName(playlistFolder)
 	playlistFolderPath := filepath.Join(singerFolder, forbiddenNames.ReplaceAllString(playlistFolder, "_"))
-	os.MkdirAll(playlistFolderPath, 0755)
+	if err := ensureDir(playlistFolderPath); err != nil {
+		return fmt.Errorf("create station folder %s: %w", playlistFolderPath, err)
+	}
 	station.SaveName = playlistFolder
 	fmt.Println(playlistFolder)
 
@@ -1115,41 +1119,7 @@ func ripStation(state *sessionState, albumId string, token string, storefront st
 	}
 	station.CoverPath = covPath
 
-	if Config.SaveAnimatedArtwork && meta.Data[0].Attributes.EditorialVideo.MotionSquare.Video != "" {
-		fmt.Println("Found Animation Artwork.")
-
-		motionvideoUrlSquare, err := extractVideo(meta.Data[0].Attributes.EditorialVideo.MotionSquare.Video)
-		if err != nil {
-			fmt.Println("no motion video square.\n", err)
-		} else {
-			exists, err := fileExists(filepath.Join(playlistFolderPath, "square_animated_artwork.mp4"))
-			if err != nil {
-				fmt.Println("Failed to check if animated artwork square exists.")
-			}
-			if exists {
-				fmt.Println("Animated artwork square already exists locally.")
-			} else {
-				fmt.Println("Animation Artwork Square Downloading...")
-				outPath := filepath.Join(playlistFolderPath, "square_animated_artwork.mp4")
-				if err := runCommandWithAtomicOutput(outPath, func(tempPath string) *exec.Cmd {
-					return exec.Command(Config.FFmpegPath, "-loglevel", "quiet", "-y", "-i", motionvideoUrlSquare, "-c", "copy", tempPath)
-				}); err != nil {
-					fmt.Printf("animated artwork square dl err: %v\n", err)
-				} else {
-					fmt.Println("Animation Artwork Square Downloaded")
-				}
-			}
-		}
-
-		if Config.EmbyAnimatedArtwork {
-			outPath := filepath.Join(playlistFolderPath, "folder.jpg")
-			if err := runCommandWithAtomicOutput(outPath, func(tempPath string) *exec.Cmd {
-				return exec.Command(Config.FFmpegPath, "-i", filepath.Join(playlistFolderPath, "square_animated_artwork.mp4"), "-vf", "scale=440:-1", "-r", "24", "-f", "gif", tempPath)
-			}); err != nil {
-				fmt.Printf("animated artwork square to gif err: %v\n", err)
-			}
-		}
-	}
+	saveAnimatedArtwork(playlistFolderPath, meta.Data[0].Attributes.EditorialVideo.MotionSquare.Video, "")
 	if station.Type == "stream" {
 		state.Counter.Total++
 		if isInArray(state.OKDict[station.ID], 1) {
@@ -1355,47 +1325,12 @@ func ripAlbum(state *sessionState, albumId string, token string, storefront stri
 		fmt.Println(singerFoldername)
 	}
 	singerFolder := saveFolderForCurrentCodec(state, singerFoldername)
-	os.MkdirAll(singerFolder, 0755)
+	if err := ensureDir(singerFolder); err != nil {
+		return fmt.Errorf("create album artist folder %s: %w", singerFolder, err)
+	}
 	album.SaveDir = singerFolder
 	var Quality string
-	if strings.Contains(Config.AlbumFolderFormat, "Quality") {
-		if state.SelectedAudioFormat != nil {
-			Quality = audioFormatQuality(*state.SelectedAudioFormat)
-		} else if state.isAtmosMode() {
-			Quality = fmt.Sprintf("%dKbps", state.atmosMax()-2000)
-		} else if state.isAACMode() && state.aacType() == "aac-lc" {
-			Quality = "256Kbps"
-		} else {
-			manifest1, err := ampapi.GetSongResp(storefront, meta.Data[0].Relationships.Tracks.Data[0].ID, album.Language, token)
-			if err != nil {
-				fmt.Println("Failed to get manifest.\n", err)
-			} else {
-				if manifest1.Data[0].Attributes.ExtendedAssetUrls.EnhancedHls == "" {
-					Codec = "AAC"
-					Quality = "256Kbps"
-				} else {
-					needCheck := false
-
-					if Config.GetM3u8Mode == "all" {
-						needCheck = true
-					} else if Config.GetM3u8Mode == "hires" && contains(meta.Data[0].Relationships.Tracks.Data[0].Attributes.AudioTraits, "hi-res-lossless") {
-						needCheck = true
-					}
-					var EnhancedHls_m3u8 string
-					if needCheck {
-						EnhancedHls_m3u8, _ = checkM3u8(meta.Data[0].Relationships.Tracks.Data[0].ID, "album")
-						if strings.HasSuffix(EnhancedHls_m3u8, ".m3u8") {
-							manifest1.Data[0].Attributes.ExtendedAssetUrls.EnhancedHls = EnhancedHls_m3u8
-						}
-					}
-					_, Quality, err = extractMedia(state, manifest1.Data[0].Attributes.ExtendedAssetUrls.EnhancedHls, true)
-					if err != nil {
-						fmt.Println("Failed to extract quality from manifest.\n", err)
-					}
-				}
-			}
-		}
-	}
+	Codec, Quality = resolveCollectionCodecAndQuality(state, Config.AlbumFolderFormat, storefront, album.Language, token, meta.Data[0].Relationships.Tracks.Data[0])
 	tagString := formatChoiceTags(
 		meta.Data[0].Attributes.IsAppleDigitalMaster || meta.Data[0].Attributes.IsMasteredForItunes,
 		meta.Data[0].Attributes.ContentRating,
@@ -1417,7 +1352,9 @@ func ripAlbum(state *sessionState, albumId string, token string, storefront stri
 
 	albumFolderName = cleanFolderName(albumFolderName)
 	albumFolderPath := filepath.Join(singerFolder, forbiddenNames.ReplaceAllString(albumFolderName, "_"))
-	os.MkdirAll(albumFolderPath, 0755)
+	if err := ensureDir(albumFolderPath); err != nil {
+		return fmt.Errorf("create album folder %s: %w", albumFolderPath, err)
+	}
 	album.SaveName = albumFolderName
 	fmt.Println(albumFolderName)
 	if Config.SaveArtistCover && len(meta.Data[0].Relationships.Artists.Data) > 0 {
@@ -1432,64 +1369,7 @@ func ripAlbum(state *sessionState, albumId string, token string, storefront stri
 	if err != nil {
 		fmt.Println("Failed to write cover.")
 	}
-	if Config.SaveAnimatedArtwork && meta.Data[0].Attributes.EditorialVideo.MotionDetailSquare.Video != "" {
-		fmt.Println("Found Animation Artwork.")
-
-		motionvideoUrlSquare, err := extractVideo(meta.Data[0].Attributes.EditorialVideo.MotionDetailSquare.Video)
-		if err != nil {
-			fmt.Println("no motion video square.\n", err)
-		} else {
-			exists, err := fileExists(filepath.Join(albumFolderPath, "square_animated_artwork.mp4"))
-			if err != nil {
-				fmt.Println("Failed to check if animated artwork square exists.")
-			}
-			if exists {
-				fmt.Println("Animated artwork square already exists locally.")
-			} else {
-				fmt.Println("Animation Artwork Square Downloading...")
-				outPath := filepath.Join(albumFolderPath, "square_animated_artwork.mp4")
-				if err := runCommandWithAtomicOutput(outPath, func(tempPath string) *exec.Cmd {
-					return exec.Command(Config.FFmpegPath, "-loglevel", "quiet", "-y", "-i", motionvideoUrlSquare, "-c", "copy", tempPath)
-				}); err != nil {
-					fmt.Printf("animated artwork square dl err: %v\n", err)
-				} else {
-					fmt.Println("Animation Artwork Square Downloaded")
-				}
-			}
-		}
-
-		if Config.EmbyAnimatedArtwork {
-			outPath := filepath.Join(albumFolderPath, "folder.jpg")
-			if err := runCommandWithAtomicOutput(outPath, func(tempPath string) *exec.Cmd {
-				return exec.Command(Config.FFmpegPath, "-i", filepath.Join(albumFolderPath, "square_animated_artwork.mp4"), "-vf", "scale=440:-1", "-r", "24", "-f", "gif", tempPath)
-			}); err != nil {
-				fmt.Printf("animated artwork square to gif err: %v\n", err)
-			}
-		}
-
-		motionvideoUrlTall, err := extractVideo(meta.Data[0].Attributes.EditorialVideo.MotionDetailTall.Video)
-		if err != nil {
-			fmt.Println("no motion video tall.\n", err)
-		} else {
-			exists, err := fileExists(filepath.Join(albumFolderPath, "tall_animated_artwork.mp4"))
-			if err != nil {
-				fmt.Println("Failed to check if animated artwork tall exists.")
-			}
-			if exists {
-				fmt.Println("Animated artwork tall already exists locally.")
-			} else {
-				fmt.Println("Animation Artwork Tall Downloading...")
-				outPath := filepath.Join(albumFolderPath, "tall_animated_artwork.mp4")
-				if err := runCommandWithAtomicOutput(outPath, func(tempPath string) *exec.Cmd {
-					return exec.Command(Config.FFmpegPath, "-loglevel", "quiet", "-y", "-i", motionvideoUrlTall, "-c", "copy", tempPath)
-				}); err != nil {
-					fmt.Printf("animated artwork tall dl err: %v\n", err)
-				} else {
-					fmt.Println("Animation Artwork Tall Downloaded")
-				}
-			}
-		}
-	}
+	saveAnimatedArtwork(albumFolderPath, meta.Data[0].Attributes.EditorialVideo.MotionDetailSquare.Video, meta.Data[0].Attributes.EditorialVideo.MotionDetailTall.Video)
 	for i := range album.Tracks {
 		album.Tracks[i].CoverPath = covPath
 		album.Tracks[i].SaveDir = albumFolderPath
@@ -1578,48 +1458,13 @@ func ripPlaylist(state *sessionState, playlistId string, token string, storefron
 		fmt.Println(singerFoldername)
 	}
 	singerFolder := saveFolderForCurrentCodec(state, singerFoldername)
-	os.MkdirAll(singerFolder, 0755)
+	if err := ensureDir(singerFolder); err != nil {
+		return fmt.Errorf("create playlist artist folder %s: %w", singerFolder, err)
+	}
 	playlist.SaveDir = singerFolder
 
 	var Quality string
-	if strings.Contains(Config.AlbumFolderFormat, "Quality") {
-		if state.SelectedAudioFormat != nil {
-			Quality = audioFormatQuality(*state.SelectedAudioFormat)
-		} else if state.isAtmosMode() {
-			Quality = fmt.Sprintf("%dKbps", state.atmosMax()-2000)
-		} else if state.isAACMode() && state.aacType() == "aac-lc" {
-			Quality = "256Kbps"
-		} else {
-			manifest1, err := ampapi.GetSongResp(storefront, meta.Data[0].Relationships.Tracks.Data[0].ID, playlist.Language, token)
-			if err != nil {
-				fmt.Println("Failed to get manifest.\n", err)
-			} else {
-				if manifest1.Data[0].Attributes.ExtendedAssetUrls.EnhancedHls == "" {
-					Codec = "AAC"
-					Quality = "256Kbps"
-				} else {
-					needCheck := false
-
-					if Config.GetM3u8Mode == "all" {
-						needCheck = true
-					} else if Config.GetM3u8Mode == "hires" && contains(meta.Data[0].Relationships.Tracks.Data[0].Attributes.AudioTraits, "hi-res-lossless") {
-						needCheck = true
-					}
-					var EnhancedHls_m3u8 string
-					if needCheck {
-						EnhancedHls_m3u8, _ = checkM3u8(meta.Data[0].Relationships.Tracks.Data[0].ID, "album")
-						if strings.HasSuffix(EnhancedHls_m3u8, ".m3u8") {
-							manifest1.Data[0].Attributes.ExtendedAssetUrls.EnhancedHls = EnhancedHls_m3u8
-						}
-					}
-					_, Quality, err = extractMedia(state, manifest1.Data[0].Attributes.ExtendedAssetUrls.EnhancedHls, true)
-					if err != nil {
-						fmt.Println("Failed to extract quality from manifest.\n", err)
-					}
-				}
-			}
-		}
-	}
+	Codec, Quality = resolveCollectionCodecAndQuality(state, Config.AlbumFolderFormat, storefront, playlist.Language, token, meta.Data[0].Relationships.Tracks.Data[0])
 	tagString := formatChoiceTags(
 		meta.Data[0].Attributes.IsAppleDigitalMaster || meta.Data[0].Attributes.IsMasteredForItunes,
 		meta.Data[0].Attributes.ContentRating,
@@ -1634,7 +1479,9 @@ func ripPlaylist(state *sessionState, playlistId string, token string, storefron
 	).Replace(Config.PlaylistFolderFormat)
 	playlistFolder = cleanFolderName(playlistFolder)
 	playlistFolderPath := filepath.Join(singerFolder, forbiddenNames.ReplaceAllString(playlistFolder, "_"))
-	os.MkdirAll(playlistFolderPath, 0755)
+	if err := ensureDir(playlistFolderPath); err != nil {
+		return fmt.Errorf("create playlist folder %s: %w", playlistFolderPath, err)
+	}
 	playlist.SaveName = playlistFolder
 	fmt.Println(playlistFolder)
 	trackTotal := len(meta.Data[0].Relationships.Tracks.Data)
@@ -1661,64 +1508,7 @@ func ripPlaylist(state *sessionState, playlistId string, token string, storefron
 		playlist.Tracks[i].Codec = Codec
 	}
 
-	if Config.SaveAnimatedArtwork && meta.Data[0].Attributes.EditorialVideo.MotionDetailSquare.Video != "" {
-		fmt.Println("Found Animation Artwork.")
-
-		motionvideoUrlSquare, err := extractVideo(meta.Data[0].Attributes.EditorialVideo.MotionDetailSquare.Video)
-		if err != nil {
-			fmt.Println("no motion video square.\n", err)
-		} else {
-			exists, err := fileExists(filepath.Join(playlistFolderPath, "square_animated_artwork.mp4"))
-			if err != nil {
-				fmt.Println("Failed to check if animated artwork square exists.")
-			}
-			if exists {
-				fmt.Println("Animated artwork square already exists locally.")
-			} else {
-				fmt.Println("Animation Artwork Square Downloading...")
-				outPath := filepath.Join(playlistFolderPath, "square_animated_artwork.mp4")
-				if err := runCommandWithAtomicOutput(outPath, func(tempPath string) *exec.Cmd {
-					return exec.Command(Config.FFmpegPath, "-loglevel", "quiet", "-y", "-i", motionvideoUrlSquare, "-c", "copy", tempPath)
-				}); err != nil {
-					fmt.Printf("animated artwork square dl err: %v\n", err)
-				} else {
-					fmt.Println("Animation Artwork Square Downloaded")
-				}
-			}
-		}
-
-		if Config.EmbyAnimatedArtwork {
-			outPath := filepath.Join(playlistFolderPath, "folder.jpg")
-			if err := runCommandWithAtomicOutput(outPath, func(tempPath string) *exec.Cmd {
-				return exec.Command(Config.FFmpegPath, "-i", filepath.Join(playlistFolderPath, "square_animated_artwork.mp4"), "-vf", "scale=440:-1", "-r", "24", "-f", "gif", tempPath)
-			}); err != nil {
-				fmt.Printf("animated artwork square to gif err: %v\n", err)
-			}
-		}
-
-		motionvideoUrlTall, err := extractVideo(meta.Data[0].Attributes.EditorialVideo.MotionDetailTall.Video)
-		if err != nil {
-			fmt.Println("no motion video tall.\n", err)
-		} else {
-			exists, err := fileExists(filepath.Join(playlistFolderPath, "tall_animated_artwork.mp4"))
-			if err != nil {
-				fmt.Println("Failed to check if animated artwork tall exists.")
-			}
-			if exists {
-				fmt.Println("Animated artwork tall already exists locally.")
-			} else {
-				fmt.Println("Animation Artwork Tall Downloading...")
-				outPath := filepath.Join(playlistFolderPath, "tall_animated_artwork.mp4")
-				if err := runCommandWithAtomicOutput(outPath, func(tempPath string) *exec.Cmd {
-					return exec.Command(Config.FFmpegPath, "-loglevel", "quiet", "-y", "-i", motionvideoUrlTall, "-c", "copy", tempPath)
-				}); err != nil {
-					fmt.Printf("animated artwork tall dl err: %v\n", err)
-				} else {
-					fmt.Println("Animation Artwork Tall Downloaded")
-				}
-			}
-		}
-	}
+	saveAnimatedArtwork(playlistFolderPath, meta.Data[0].Attributes.EditorialVideo.MotionDetailSquare.Video, meta.Data[0].Attributes.EditorialVideo.MotionDetailTall.Video)
 	startIdx := len(state.AddedTracks)
 	for i := range playlist.Tracks {
 		i++
@@ -1750,6 +1540,9 @@ func writeM3UPlaylist(folderPath string, name string, tracks []AddedTrack) error
 	return writeFileAtomic(m3uPath, 0644, func(f *os.File) error {
 		fmt.Fprintln(f, "#EXTM3U")
 		for _, track := range tracks {
+			if strings.TrimSpace(track.Path) == "" {
+				continue
+			}
 			fmt.Fprintf(f, "#EXTINF:-1,%s - %s\n", track.Artist, track.Song)
 			fmt.Fprintln(f, filepath.Base(track.Path))
 		}
@@ -2073,10 +1866,10 @@ func main() {
 }
 
 func mvDownloader(state *sessionState, adamID string, saveDir string, token string, storefront string, mediaUserToken string, track *task.Track, selectVideo bool) error {
-	MVInfo, err := ampapi.GetMusicVideoResp(storefront, adamID, Config.Language, token)
+	MVInfo, err := getMusicVideoResp(storefront, adamID, Config.Language, token)
 	if err != nil {
 		fmt.Println("\u26A0 Failed to get MV manifest:", err)
-		return nil
+		return err
 	}
 
 	saveDir = cleanFolderName(saveDir)
@@ -2114,22 +1907,40 @@ func mvDownloader(state *sessionState, adamID string, saveDir string, token stri
 		return nil
 	}
 
-	mvm3u8url, _, _, _ := runv3.GetWebplayback(adamID, token, mediaUserToken, true)
+	mvm3u8url, _, _, err := getMVWebplayback(adamID, token, mediaUserToken, true)
+	if err != nil {
+		return fmt.Errorf("get MV playback manifest: %w", err)
+	}
 	if mvm3u8url == "" {
 		return errors.New("media-user-token may wrong or expired")
 	}
 
-	os.MkdirAll(saveDir, 0755)
-	videom3u8url, err := extractVideoWithSelection(mvm3u8url, selectVideo)
+	if err := ensureDir(saveDir); err != nil {
+		return fmt.Errorf("create MV folder %s: %w", saveDir, err)
+	}
+	videom3u8url, err := extractMVVideoURL(mvm3u8url, selectVideo)
 	if err != nil {
 		return err
 	}
-	videokeyAndUrls, _ := runv3.Run(adamID, videom3u8url, token, mediaUserToken, true, "")
-	_ = runv3.ExtMvData(videokeyAndUrls, vidPath, Config.MP4DecryptPath)
+	videokeyAndUrls, err := runMVDownload(adamID, videom3u8url, token, mediaUserToken, true, "")
+	if err != nil {
+		return fmt.Errorf("download MV video stream: %w", err)
+	}
+	if err := extractMVData(videokeyAndUrls, vidPath, Config.MP4DecryptPath); err != nil {
+		return fmt.Errorf("decrypt MV video stream: %w", err)
+	}
 	defer os.Remove(vidPath)
-	audiom3u8url, _ := extractMvAudio(mvm3u8url)
-	audiokeyAndUrls, _ := runv3.Run(adamID, audiom3u8url, token, mediaUserToken, true, "")
-	_ = runv3.ExtMvData(audiokeyAndUrls, audPath, Config.MP4DecryptPath)
+	audiom3u8url, err := extractMVAudioURL(mvm3u8url)
+	if err != nil {
+		return fmt.Errorf("select MV audio stream: %w", err)
+	}
+	audiokeyAndUrls, err := runMVDownload(adamID, audiom3u8url, token, mediaUserToken, true, "")
+	if err != nil {
+		return fmt.Errorf("download MV audio stream: %w", err)
+	}
+	if err := extractMVData(audiokeyAndUrls, audPath, Config.MP4DecryptPath); err != nil {
+		return fmt.Errorf("decrypt MV audio stream: %w", err)
+	}
 	defer os.Remove(audPath)
 
 	tags := []string{

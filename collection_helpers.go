@@ -76,7 +76,9 @@ func markTrackSuccess(state *sessionState, track *task.Track, path string) {
 func markTrackSkipped(state *sessionState, track *task.Track, path string, reason string) {
 	state.Counter.Success++
 	state.OKDict[track.PreID] = append(state.OKDict[track.PreID], track.TaskNum)
-	state.AddedTracks = append(state.AddedTracks, addedTrackForPath(track, path))
+	if shouldListSkippedTrack(reason, path) {
+		state.AddedTracks = append(state.AddedTracks, addedTrackForPath(track, path))
+	}
 	item := trackDBItem(state, track, path)
 	if reason == "file-exists" {
 		if appDB != nil && !no_database {
@@ -90,4 +92,11 @@ func markTrackSkipped(state *sessionState, track *task.Track, path string, reaso
 
 func markTrackFailure(state *sessionState, track *task.Track, err error) {
 	recordFailure(trackDBItem(state, track, plannedTrackPath(track, "")), err)
+}
+
+func shouldListSkippedTrack(reason string, path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	return reason == "already-downloaded" || reason == "file-exists"
 }
