@@ -26,6 +26,20 @@ func cleanFolderName(name string) string {
 	return strings.TrimSpace(name)
 }
 
+func formatChoiceTags(isAppleMaster bool, contentRating string) string {
+	var tags []string
+	if isAppleMaster && Config.AppleMasterChoice != "" {
+		tags = append(tags, Config.AppleMasterChoice)
+	}
+	if contentRating == "explicit" && Config.ExplicitChoice != "" {
+		tags = append(tags, Config.ExplicitChoice)
+	}
+	if contentRating == "clean" && Config.CleanChoice != "" {
+		tags = append(tags, Config.CleanChoice)
+	}
+	return strings.Join(tags, " ")
+}
+
 func allIndexes(total int) []int {
 	indexes := make([]int, total)
 	for i := 0; i < total; i++ {

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -109,5 +110,66 @@ func TestDownloadDBRecordDownloadUpdatesQuality(t *testing.T) {
 	}
 	if saved.Quality != "24B-96.0kHz" {
 		t.Fatalf("saved.Quality = %q, want 24B-96.0kHz", saved.Quality)
+	}
+}
+
+func TestDownloadDBConfiguresWALAndBusyTimeout(t *testing.T) {
+	db, err := OpenDownloadDB(filepath.Join(t.TempDir(), "amdl.db"))
+	if err != nil {
+		t.Fatalf("OpenDownloadDB: %v", err)
+	}
+	defer db.Close()
+
+	var journalMode string
+	if err := db.db.QueryRow(`PRAGMA journal_mode`).Scan(&journalMode); err != nil {
+		t.Fatalf("journal_mode pragma: %v", err)
+	}
+	if strings.ToLower(journalMode) != "wal" {
+		t.Fatalf("journal_mode = %q, want wal", journalMode)
+	}
+
+	var busyTimeout int
+	if err := db.db.QueryRow(`PRAGMA busy_timeout`).Scan(&busyTimeout); err != nil {
+		t.Fatalf("busy_timeout pragma: %v", err)
+	}
+	if busyTimeout < 5000 {
+		t.Fatalf("busy_timeout = %d, want at least 5000", busyTimeout)
+	}
+}
+
+func TestRecordFailureRedactsSecrets(t *testing.T) {
+	oldDB := appDB
+	oldConfig := Config
+	oldNoDB := no_database
+	t.Cleanup(func() {
+		appDB = oldDB
+		Config = oldConfig
+		no_database = oldNoDB
+	})
+
+	db, err := OpenDownloadDB(filepath.Join(t.TempDir(), "amdl.db"))
+	if err != nil {
+		t.Fatalf("OpenDownloadDB: %v", err)
+	}
+	defer db.Close()
+
+	appDB = db
+	no_database = false
+	Config = defaultConfig()
+	Config.FailedDownloadsEnabled = true
+	Config.AuthorizationToken = "secret-token"
+
+	item := DBItem{Storefront: "us", MediaType: "song", AppleID: "123", Codec: "ALAC"}
+	recordFailure(item, errors.New("failed with Bearer secret-token"))
+
+	failed, err := db.ListFailed()
+	if err != nil {
+		t.Fatalf("ListFailed: %v", err)
+	}
+	if len(failed) != 1 {
+		t.Fatalf("failed rows = %d, want 1", len(failed))
+	}
+	if strings.Contains(failed[0].Error, "secret-token") {
+		t.Fatalf("failure error leaked token: %q", failed[0].Error)
 	}
 }

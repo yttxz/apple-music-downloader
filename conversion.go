@@ -14,7 +14,6 @@ import (
 	"github.com/kballard/go-shellquote"
 )
 
-// CONVERSION FEATURE: Determine if source codec is lossy (rough heuristic by extension/codec name).
 func isLossySource(ext string, codec string) bool {
 	ext = strings.ToLower(ext)
 	if ext == ".m4a" && (codec == "AAC" || strings.Contains(codec, "AAC") || strings.Contains(codec, "ATMOS")) {
@@ -26,8 +25,7 @@ func isLossySource(ext string, codec string) bool {
 	return false
 }
 
-// CONVERSION FEATURE: Build ffmpeg arguments for desired target.
-func buildFFmpegArgs(ffmpegPath, inPath, outPath, targetFmt, extraArgs string) ([]string, error) {
+func buildFFmpegArgs(inPath, outPath, targetFmt, extraArgs string) ([]string, error) {
 	args := []string{"-y", "-i", inPath, "-loglevel", "error", "-map_metadata"}
 	if Config.ConvertWithMetadata {
 		args = append(args, "0")
@@ -65,7 +63,6 @@ func buildFFmpegArgs(ffmpegPath, inPath, outPath, targetFmt, extraArgs string) (
 	return args, nil
 }
 
-// CONVERSION FEATURE: Perform conversion if enabled.
 func convertIfNeeded(track *task.Track) {
 	if !Config.ConvertAfterDownload {
 		return
@@ -80,7 +77,6 @@ func convertIfNeeded(track *task.Track) {
 	ext := strings.ToLower(filepath.Ext(srcPath))
 	targetFmt := strings.ToLower(Config.ConvertFormat)
 
-	// Map extension for output
 	if targetFmt == "copy" {
 		fmt.Println("Convert (copy) requested; skipping because it produces no new format.")
 		return
@@ -118,7 +114,7 @@ func convertIfNeeded(track *task.Track) {
 		return
 	}
 
-	args, err := buildFFmpegArgs(Config.FFmpegPath, srcPath, tempOutPath, targetFmt, Config.ConvertExtraArgs)
+	args, err := buildFFmpegArgs(srcPath, tempOutPath, targetFmt, Config.ConvertExtraArgs)
 	if err != nil {
 		fmt.Println("Conversion config error:", err)
 		return

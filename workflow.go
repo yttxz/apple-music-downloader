@@ -106,6 +106,7 @@ func recordSkip(item DBItem, reason string) {
 }
 
 func recordFailure(item DBItem, err error) {
+	err = redactError(err)
 	if appDB != nil && !no_database && Config.FailedDownloadsEnabled {
 		if dbErr := appDB.RecordFailure(item, err); dbErr != nil {
 			fmt.Println("Failed to record failure:", dbErr)
@@ -212,6 +213,13 @@ func runDoctor() error {
 	}
 	if appDB != nil {
 		fmt.Printf("[OK] database: %s\n", Config.DatabasePath)
+	}
+	if missing, err := missingManagedConfigKeys(config_path); err == nil && len(missing) > 0 {
+		fmt.Printf("[WARN] config keys: %d managed key(s) missing; run --config-upgrade\n", len(missing))
+	} else if err != nil {
+		fmt.Printf("[WARN] config keys: %s\n", err)
+	} else {
+		fmt.Println("[OK] config keys: complete")
 	}
 	return nil
 }

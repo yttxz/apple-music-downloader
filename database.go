@@ -25,7 +25,7 @@ type DBItem struct {
 }
 
 type DownloadDB struct {
-	mu sync.Mutex
+	mu sync.RWMutex
 	db *sql.DB
 }
 
@@ -42,12 +42,32 @@ func OpenDownloadDB(path string) (*DownloadDB, error) {
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(4)
 	state := &DownloadDB{db: db}
+	if err := state.configure(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	if err := state.migrate(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
 	return state, nil
+}
+
+func (d *DownloadDB) configure() error {
+	stmts := []string{
+		`PRAGMA busy_timeout = 5000`,
+		`PRAGMA journal_mode = WAL`,
+		`PRAGMA synchronous = NORMAL`,
+	}
+	for _, stmt := range stmts {
+		if _, err := d.db.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (d *DownloadDB) Close() error {
@@ -100,8 +120,8 @@ func (d *DownloadDB) Downloaded(item DBItem) (bool, DBItem, error) {
 	if d == nil || d.db == nil || item.AppleID == "" {
 		return false, DBItem{}, nil
 	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 	row := d.db.QueryRow(
 		`SELECT save_path, quality, source_url FROM downloads WHERE storefront=? AND media_type=? AND apple_id=? AND codec=?`,
 		item.Storefront, item.MediaType, item.AppleID, item.Codec,
@@ -176,8 +196,8 @@ func (d *DownloadDB) ListDownloads() ([]DBItem, error) {
 	if d == nil || d.db == nil {
 		return nil, nil
 	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 	rows, err := d.db.Query(`SELECT storefront, media_type, apple_id, codec, quality, source_url, save_path FROM downloads ORDER BY completed_at DESC`)
 	if err != nil {
 		return nil, err
@@ -198,8 +218,8 @@ func (d *DownloadDB) ListFailed() ([]DBItem, error) {
 	if d == nil || d.db == nil {
 		return nil, nil
 	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 	rows, err := d.db.Query(`SELECT storefront, media_type, apple_id, codec, source_url, error, attempt_count FROM failed_downloads ORDER BY last_attempt_at DESC`)
 	if err != nil {
 		return nil, err

@@ -17,7 +17,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"apple-music-downloader/utils/alacfix"
@@ -53,6 +52,7 @@ var (
 	no_database          bool
 	repair_mode          bool
 	config_validate_only bool
+	config_upgrade_only  bool
 	doctor_mode          bool
 	dry_run              bool
 	config_path          string
@@ -79,87 +79,6 @@ type AddedTrack struct {
 	ArtistID string `json:"artist_id"`
 	Album    string `json:"album"`
 	Song     string `json:"song"`
-}
-
-type sessionState struct {
-	Counter             structs.Counter
-	OKDict              map[string][]int
-	AddedTracks         []AddedTrack
-	SelectedAudioFormat *AudioFormat
-	SourceURL           string
-	SongMode            bool
-}
-
-func newSessionState(sourceURL string) *sessionState {
-	return &sessionState{
-		OKDict:    make(map[string][]int),
-		SourceURL: sourceURL,
-		SongMode:  dl_song,
-	}
-}
-
-func (s *sessionState) merge(other *sessionState) {
-	if s == nil || other == nil {
-		return
-	}
-	s.Counter.Total += other.Counter.Total
-	s.Counter.Success += other.Counter.Success
-	s.Counter.Unavailable += other.Counter.Unavailable
-	s.Counter.NotSong += other.Counter.NotSong
-	s.Counter.Error += other.Counter.Error
-	s.AddedTracks = append(s.AddedTracks, other.AddedTracks...)
-	for key, values := range other.OKDict {
-		s.OKDict[key] = append(s.OKDict[key], values...)
-	}
-}
-
-func (s *sessionState) isAtmosMode() bool {
-	if s != nil && s.SelectedAudioFormat != nil {
-		return s.SelectedAudioFormat.Codecs == "ec-3" || s.SelectedAudioFormat.Codecs == "ac-3"
-	}
-	return dl_atmos
-}
-
-func (s *sessionState) isAACMode() bool {
-	if s != nil && s.SelectedAudioFormat != nil {
-		return s.SelectedAudioFormat.Codecs == "mp4a.40.2"
-	}
-	return dl_aac
-}
-
-func (s *sessionState) aacType() string {
-	if s != nil && s.SelectedAudioFormat != nil && s.SelectedAudioFormat.Codecs == "mp4a.40.2" {
-		return audioFormatAACType(*s.SelectedAudioFormat)
-	}
-	return Config.AacType
-}
-
-func (s *sessionState) alacMax() int {
-	if s != nil && s.SelectedAudioFormat != nil && s.SelectedAudioFormat.Codecs == "alac" {
-		if sampleRate := audioFormatSampleRate(*s.SelectedAudioFormat); sampleRate > 0 {
-			return sampleRate
-		}
-	}
-	return Config.AlacMax
-}
-
-func (s *sessionState) atmosMax() int {
-	if s != nil && s.SelectedAudioFormat != nil && (s.SelectedAudioFormat.Codecs == "ec-3" || s.SelectedAudioFormat.Codecs == "ac-3") {
-		if bitrate := audioFormatBitrate(*s.SelectedAudioFormat); bitrate > 0 {
-			return bitrate
-		}
-	}
-	return Config.AtmosMax
-}
-
-func (s *sessionState) currentCodec() string {
-	if s.isAtmosMode() {
-		return "ATMOS"
-	}
-	if s.isAACMode() {
-		return "AAC"
-	}
-	return "ALAC"
 }
 
 type ArtistSelectItem struct {
@@ -250,8 +169,9 @@ func toolAvailable(tool string) bool {
 }
 
 func LimitString(s string) string {
-	if len([]rune(s)) > Config.LimitMax {
-		return string([]rune(s)[:Config.LimitMax])
+	runes := []rune(s)
+	if len(runes) > Config.LimitMax {
+		return string(runes[:Config.LimitMax])
 	}
 	return s
 }
@@ -841,6 +761,13 @@ func ripTrack(state *sessionState, track *task.Track, token string, mediaUserTok
 			markTrackSkipped(state, track, saved.SavePath, "already-downloaded")
 			return
 		}
+		unlockDownload, locked := downloadInFlight.TryLock(dbItem)
+		if !locked {
+			fmt.Println("MV already in progress in this run.")
+			markTrackSkipped(state, track, "", "already-in-progress")
+			return
+		}
+		defer unlockDownload()
 		if len(mediaUserToken) <= 50 {
 			fmt.Println("meida-user-token is not set, skip MV dl")
 			markTrackSkipped(state, track, "", "missing-media-user-token")
@@ -926,23 +853,7 @@ func ripTrack(state *sessionState, track *task.Track, token string, mediaUserTok
 		track.Quality = Quality
 	}
 
-	stringsToJoin := []string{}
-	if track.Resp.Attributes.IsAppleDigitalMaster {
-		if Config.AppleMasterChoice != "" {
-			stringsToJoin = append(stringsToJoin, Config.AppleMasterChoice)
-		}
-	}
-	if track.Resp.Attributes.ContentRating == "explicit" {
-		if Config.ExplicitChoice != "" {
-			stringsToJoin = append(stringsToJoin, Config.ExplicitChoice)
-		}
-	}
-	if track.Resp.Attributes.ContentRating == "clean" {
-		if Config.CleanChoice != "" {
-			stringsToJoin = append(stringsToJoin, Config.CleanChoice)
-		}
-	}
-	Tag_string := strings.Join(stringsToJoin, " ")
+	tagString := formatChoiceTags(track.Resp.Attributes.IsAppleDigitalMaster, track.Resp.Attributes.ContentRating)
 
 	songName := strings.NewReplacer(
 		"{SongId}", track.ID,
@@ -952,7 +863,7 @@ func ripTrack(state *sessionState, track *task.Track, token string, mediaUserTok
 		"{DiscNumber}", fmt.Sprintf("%0d", track.Resp.Attributes.DiscNumber),
 		"{TrackNumber}", fmt.Sprintf("%0d", track.Resp.Attributes.TrackNumber),
 		"{Quality}", Quality,
-		"{Tag}", Tag_string,
+		"{Tag}", tagString,
 		"{Codec}", track.Codec,
 	).Replace(Config.SongFileFormat)
 	fmt.Println(songName)
@@ -985,6 +896,20 @@ func ripTrack(state *sessionState, track *task.Track, token string, mediaUserTok
 		return
 	} else if err != nil {
 		fmt.Println("Failed to check downloads database:", err)
+	}
+	unlockDownload, locked := downloadInFlight.TryLock(dbItem)
+	if !locked {
+		fmt.Println("Track already in progress in this run.")
+		markTrackSkipped(state, track, trackPath, "already-in-progress")
+		return
+	}
+	defer unlockDownload()
+	if ok, saved, err := appDB.Downloaded(dbItem); err == nil && ok {
+		fmt.Println("Track already recorded in database.")
+		markTrackSkipped(state, track, saved.SavePath, "already-downloaded")
+		return
+	} else if err != nil {
+		fmt.Println("Failed to re-check downloads database:", err)
 	}
 	if dry_run {
 		fmt.Printf("Dry run: would download %s [%s %s] -> %s\n", track.ID, track.Codec, track.Quality, trackPath)
@@ -1471,23 +1396,10 @@ func ripAlbum(state *sessionState, albumId string, token string, storefront stri
 			}
 		}
 	}
-	stringsToJoin := []string{}
-	if meta.Data[0].Attributes.IsAppleDigitalMaster || meta.Data[0].Attributes.IsMasteredForItunes {
-		if Config.AppleMasterChoice != "" {
-			stringsToJoin = append(stringsToJoin, Config.AppleMasterChoice)
-		}
-	}
-	if meta.Data[0].Attributes.ContentRating == "explicit" {
-		if Config.ExplicitChoice != "" {
-			stringsToJoin = append(stringsToJoin, Config.ExplicitChoice)
-		}
-	}
-	if meta.Data[0].Attributes.ContentRating == "clean" {
-		if Config.CleanChoice != "" {
-			stringsToJoin = append(stringsToJoin, Config.CleanChoice)
-		}
-	}
-	Tag_string := strings.Join(stringsToJoin, " ")
+	tagString := formatChoiceTags(
+		meta.Data[0].Attributes.IsAppleDigitalMaster || meta.Data[0].Attributes.IsMasteredForItunes,
+		meta.Data[0].Attributes.ContentRating,
+	)
 	var albumFolderName string
 	albumFolderName = strings.NewReplacer(
 		"{ReleaseDate}", meta.Data[0].Attributes.ReleaseDate,
@@ -1500,7 +1412,7 @@ func ripAlbum(state *sessionState, albumId string, token string, storefront stri
 		"{AlbumId}", albumId,
 		"{Quality}", Quality,
 		"{Codec}", Codec,
-		"{Tag}", Tag_string,
+		"{Tag}", tagString,
 	).Replace(Config.AlbumFolderFormat)
 
 	albumFolderName = cleanFolderName(albumFolderName)
@@ -1708,30 +1620,17 @@ func ripPlaylist(state *sessionState, playlistId string, token string, storefron
 			}
 		}
 	}
-	stringsToJoin := []string{}
-	if meta.Data[0].Attributes.IsAppleDigitalMaster || meta.Data[0].Attributes.IsMasteredForItunes {
-		if Config.AppleMasterChoice != "" {
-			stringsToJoin = append(stringsToJoin, Config.AppleMasterChoice)
-		}
-	}
-	if meta.Data[0].Attributes.ContentRating == "explicit" {
-		if Config.ExplicitChoice != "" {
-			stringsToJoin = append(stringsToJoin, Config.ExplicitChoice)
-		}
-	}
-	if meta.Data[0].Attributes.ContentRating == "clean" {
-		if Config.CleanChoice != "" {
-			stringsToJoin = append(stringsToJoin, Config.CleanChoice)
-		}
-	}
-	Tag_string := strings.Join(stringsToJoin, " ")
+	tagString := formatChoiceTags(
+		meta.Data[0].Attributes.IsAppleDigitalMaster || meta.Data[0].Attributes.IsMasteredForItunes,
+		meta.Data[0].Attributes.ContentRating,
+	)
 	playlistFolder := strings.NewReplacer(
 		"{ArtistName}", "Apple Music",
 		"{PlaylistName}", LimitString(meta.Data[0].Attributes.Name),
 		"{PlaylistId}", playlistId,
 		"{Quality}", Quality,
 		"{Codec}", Codec,
-		"{Tag}", Tag_string,
+		"{Tag}", tagString,
 	).Replace(Config.PlaylistFolderFormat)
 	playlistFolder = cleanFolderName(playlistFolder)
 	playlistFolderPath := filepath.Join(singerFolder, forbiddenNames.ReplaceAllString(playlistFolder, "_"))
@@ -1985,6 +1884,7 @@ func main() {
 	pflag.BoolVar(&no_database, "no-db", false, "Do not use the downloads database")
 	pflag.BoolVar(&repair_mode, "repair", false, "Retry items from the failed downloads database")
 	pflag.BoolVar(&config_validate_only, "config-validate", false, "Validate config and exit")
+	pflag.BoolVar(&config_upgrade_only, "config-upgrade", false, "Print missing config keys and default snippets")
 	pflag.BoolVar(&doctor_mode, "doctor", false, "Run local dependency/config checks and exit")
 	pflag.BoolVar(&dry_run, "dry-run", false, "Preview work without writing media files")
 	pflag.StringVar(&input_file, "file", "", "Load URLs from a text or JSON file")
@@ -2023,6 +1923,12 @@ func main() {
 
 	if config_validate_only {
 		fmt.Printf("Config valid: %s\n", config_path)
+		return
+	}
+	if config_upgrade_only {
+		if err := printConfigUpgrade(config_path); err != nil {
+			fmt.Println("Failed to inspect config:", err)
+		}
 		return
 	}
 
@@ -2163,239 +2069,6 @@ func main() {
 		if err := runSummary.PrintJSON(); err != nil {
 			fmt.Println("Error generating detailed JSON summary:", err)
 		}
-	}
-}
-
-type downloadJob struct {
-	Index int
-	Total int
-	URL   string
-}
-
-type downloadJobResult struct {
-	Job     downloadJob
-	Session *sessionState
-}
-
-func effectiveDownloadConcurrency(queueSize int) int {
-	concurrency := Config.DownloadConcurrency
-	if concurrency < 1 {
-		concurrency = 1
-	}
-	if concurrency > queueSize && queueSize > 0 {
-		concurrency = queueSize
-	}
-	if dl_select && concurrency > 1 {
-		fmt.Println("Selective mode is interactive; using download-concurrency 1.")
-		return 1
-	}
-	return concurrency
-}
-
-func runDownloadQueue(urls []string, token string) *sessionState {
-	aggregate := newSessionState("")
-	pending := append([]string(nil), urls...)
-	for {
-		results := runDownloadPass(pending, token, effectiveDownloadConcurrency(len(pending)))
-		passState := newSessionState("")
-		failedURLs := make([]string, 0)
-		for _, result := range results {
-			passState.merge(result.Session)
-			aggregate.merge(result.Session)
-			if result.Session != nil && result.Session.Counter.Error > 0 {
-				failedURLs = append(failedURLs, result.Job.URL)
-			}
-		}
-		fmt.Printf("=======  [\u2714 ] Completed: %d/%d  |  [\u26A0 ] Warnings: %d  |  [\u2716 ] Errors: %d  =======\n", passState.Counter.Success, passState.Counter.Total, passState.Counter.Unavailable+passState.Counter.NotSong, passState.Counter.Error)
-		if passState.Counter.Error == 0 {
-			break
-		}
-		if Config.ExitOnError {
-			fmt.Println("Error detected, exiting...")
-			os.Exit(1)
-		}
-		if len(failedURLs) == 0 {
-			break
-		}
-		fmt.Println("Error detected, press Enter to try failed items again...")
-		fmt.Scanln()
-		fmt.Println("Start trying failed items again...")
-		pending = failedURLs
-	}
-	return aggregate
-}
-
-func runDownloadPass(urls []string, token string, concurrency int) []downloadJobResult {
-	if concurrency < 1 {
-		concurrency = 1
-	}
-	if concurrency > len(urls) && len(urls) > 0 {
-		concurrency = len(urls)
-	}
-	jobs := make(chan downloadJob)
-	results := make(chan downloadJobResult, len(urls))
-	var wg sync.WaitGroup
-	for worker := 0; worker < concurrency; worker++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for job := range jobs {
-				state := newSessionState(job.URL)
-				processDownloadURL(state, job, token)
-				results <- downloadJobResult{Job: job, Session: state}
-			}
-		}()
-	}
-	for i, rawURL := range urls {
-		jobs <- downloadJob{Index: i, Total: len(urls), URL: rawURL}
-	}
-	close(jobs)
-	wg.Wait()
-	close(results)
-
-	collected := make([]downloadJobResult, 0, len(urls))
-	for result := range results {
-		collected = append(collected, result)
-	}
-	sort.Slice(collected, func(i, j int) bool {
-		return collected[i].Job.Index < collected[j].Job.Index
-	})
-	return collected
-}
-
-func recordJobURLFailure(state *sessionState, rawURL string, err error) {
-	item := dbItemFromURL(rawURL)
-	item.Codec = state.currentCodec()
-	item.SourceURL = rawURL
-	recordFailure(item, err)
-	state.Counter.Error++
-}
-
-func processDownloadURL(state *sessionState, job downloadJob, token string) {
-	urlRaw := job.URL
-	fmt.Printf("Queue %d of %d: ", job.Index+1, job.Total)
-	var storefront, albumId string
-
-	if strings.Contains(urlRaw, "/music-video/") {
-		fmt.Println("Music Video")
-		if debug_mode {
-			return
-		}
-		state.Counter.Total++
-		if len(Config.MediaUserToken) <= 50 {
-			fmt.Println(": meida-user-token is not set, skip MV dl")
-			recordSkip(dbItemFromURL(urlRaw), "missing-media-user-token")
-			state.Counter.Success++
-			return
-		}
-		if !toolAvailable(Config.MP4DecryptPath) {
-			fmt.Printf(": mp4decrypt not found at '%s', skip MV dl\n", Config.MP4DecryptPath)
-			recordSkip(dbItemFromURL(urlRaw), "missing-tool")
-			state.Counter.Success++
-			return
-		}
-		mvSaveDir := strings.NewReplacer(
-			"{ArtistName}", "",
-			"{UrlArtistName}", "",
-			"{ArtistId}", "",
-		).Replace(Config.ArtistFolderFormat)
-		if mvSaveDir != "" {
-			mvSaveDir = filepath.Join(Config.MVSaveFolder, forbiddenNames.ReplaceAllString(mvSaveDir, "_"))
-		} else {
-			mvSaveDir = Config.MVSaveFolder
-		}
-		storefront, albumId = checkUrlMv(urlRaw)
-		mvDBItem := DBItem{Storefront: storefront, MediaType: "music-video", AppleID: albumId, Codec: "MV", Quality: fmt.Sprintf("%dp", Config.MVMax), SourceURL: urlRaw}
-		if ok, saved, err := appDB.Downloaded(mvDBItem); err == nil && ok {
-			fmt.Println("MV already recorded in database.")
-			recordSkip(saved, "already-downloaded")
-			state.Counter.Success++
-			return
-		}
-		if dry_run {
-			fmt.Println("Dry run: MV download skipped.")
-			recordSkip(mvDBItem, "dry-run")
-			state.Counter.Success++
-			return
-		}
-		startIdx := len(state.AddedTracks)
-		err := mvDownloader(state, albumId, mvSaveDir, token, storefront, Config.MediaUserToken, nil, dl_select)
-		if err != nil {
-			fmt.Println("\u26A0 Failed to dl MV:", err)
-			recordFailure(mvDBItem, err)
-			state.Counter.Error++
-			return
-		}
-		if len(state.AddedTracks) > startIdx {
-			mvDBItem.SavePath = state.AddedTracks[len(state.AddedTracks)-1].Path
-			recordDownload(mvDBItem)
-		}
-		state.Counter.Success++
-		return
-	}
-	if strings.Contains(urlRaw, "/song/") {
-		fmt.Printf("Song->")
-		storefront, songId := checkUrlSong(urlRaw)
-		if storefront == "" || songId == "" {
-			fmt.Println("Invalid song URL format.")
-			recordJobURLFailure(state, urlRaw, errors.New("invalid song URL format"))
-			return
-		}
-		if dl_select {
-			err := selectSingleSongAudioFormat(state, songId, token, storefront)
-			if err != nil {
-				fmt.Println("Failed to select audio format:", err)
-				recordJobURLFailure(state, urlRaw, err)
-				return
-			}
-		}
-		err := ripSong(state, songId, token, storefront, Config.MediaUserToken)
-		if err != nil {
-			fmt.Println("Failed to rip song:", err)
-			recordJobURLFailure(state, urlRaw, err)
-		}
-		return
-	}
-	parse, err := url.Parse(urlRaw)
-	if err != nil {
-		fmt.Printf("Invalid URL: %v\n", err)
-		recordJobURLFailure(state, urlRaw, err)
-		return
-	}
-	urlArg_i := parse.Query().Get("i")
-
-	if strings.Contains(urlRaw, "/album/") {
-		fmt.Println("Album")
-		storefront, albumId = checkUrl(urlRaw)
-		err := ripAlbum(state, albumId, token, storefront, Config.MediaUserToken, urlArg_i)
-		if err != nil {
-			fmt.Println("Failed to rip album:", err)
-			recordJobURLFailure(state, urlRaw, err)
-		}
-	} else if strings.Contains(urlRaw, "/playlist/") {
-		fmt.Println("Playlist")
-		storefront, albumId = checkUrlPlaylist(urlRaw)
-		err := ripPlaylist(state, albumId, token, storefront, Config.MediaUserToken)
-		if err != nil {
-			fmt.Println("Failed to rip playlist:", err)
-			recordJobURLFailure(state, urlRaw, err)
-		}
-	} else if strings.Contains(urlRaw, "/station/") {
-		fmt.Printf("Station")
-		storefront, albumId = checkUrlStation(urlRaw)
-		if len(Config.MediaUserToken) <= 50 {
-			fmt.Println(": meida-user-token is not set, skip station dl")
-			recordSkip(dbItemFromURL(urlRaw), "missing-media-user-token")
-			return
-		}
-		err := ripStation(state, albumId, token, storefront, Config.MediaUserToken)
-		if err != nil {
-			fmt.Println("Failed to rip station:", err)
-			recordJobURLFailure(state, urlRaw, err)
-		}
-	} else {
-		fmt.Println("Invalid type")
-		recordJobURLFailure(state, urlRaw, errors.New("invalid URL type"))
 	}
 }
 

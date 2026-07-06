@@ -201,6 +201,7 @@ If you installed the packaged wrapper command, replace `go run .` with `amdl` in
     ```bash
     go run . --config config.yaml --config-validate
     go run . --config config.yaml --doctor
+    go run . --config config.yaml --config-upgrade
     ```
 
 12. **Preview without writing media files:**
@@ -246,6 +247,18 @@ go run . --config config.yaml --no-db "https://music.apple.com/us/album/example/
 
 If a track already exists locally, a repeat run records it as `file-exists` and backfills the database where possible. This makes old downloads visible to future skip checks.
 
+SQLite is configured with WAL mode and a busy timeout. Parallel workers also use in-memory per-item locks so duplicate URLs in the same batch do not download the same track or music video twice.
+
+### Config upgrade helper
+
+Use this when your existing `config.yaml` predates the newer safety/workflow keys:
+
+```bash
+go run . --config config.yaml --config-upgrade
+```
+
+The command does not rewrite your config. It prints missing managed keys and a YAML snippet you can add manually. `--doctor` also warns when managed keys are missing.
+
 ### JSON summary
 
 Use `--json-summary` for automation-friendly output:
@@ -276,6 +289,7 @@ Notes:
 
 - Default remains `1` for compatibility.
 - `--select` is interactive and automatically uses concurrency `1`.
+- Queue-level logs are buffered per top-level URL so parallel batch output stays easier to read.
 - MV segments use a separate `mv-segment-concurrency` setting.
 - Keep `requests-per-minute`, `retry-count`, and `request-timeout-seconds` conservative if you raise concurrency.
 
