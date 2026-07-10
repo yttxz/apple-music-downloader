@@ -19,7 +19,7 @@ var managedConfigDefaults = map[string]interface{}{
 	"retry-backoff-ms":               500,
 	"request-timeout-seconds":        30,
 	"allow-nonlocal-wrapper":         false,
-	"quality-fallback":               "skip",
+	"quality-fallback":               "best-available",
 	"artist-filter-singles-eps":      false,
 	"artist-filter-live":             false,
 	"artist-filter-compilations":     false,

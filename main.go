@@ -748,6 +748,16 @@ func backfillExistingTrackQuality(state *sessionState, track *task.Track, needDl
 	}
 }
 
+func aacFallbackMessage(state *sessionState) (string, bool) {
+	if Config.QualityFallback != "best-available" {
+		return "", false
+	}
+	if state.isAtmosMode() {
+		return "Atmos unavailable, falling back to AAC-LC", true
+	}
+	return "Lossless unavailable, falling back to AAC-LC", true
+}
+
 func ripTrack(state *sessionState, track *task.Track, token string, mediaUserToken string) {
 	var err error
 	state.Counter.Total++
@@ -756,7 +766,7 @@ func ripTrack(state *sessionState, track *task.Track, token string, mediaUserTok
 	//mv dl dev
 	if track.Type == "music-videos" {
 		dbItem := trackDBItem(state, track, "")
-		if ok, saved, err := appDB.Downloaded(dbItem); err == nil && ok {
+		if ok, saved, err := existingDownload(dbItem); err == nil && ok {
 			fmt.Println("MV already recorded in database.")
 			markTrackSkipped(state, track, saved.SavePath, "already-downloaded")
 			return
@@ -803,19 +813,8 @@ func ripTrack(state *sessionState, track *task.Track, token string, mediaUserTok
 		needDlAacLc = true
 	}
 	if track.WebM3u8 == "" && !needDlAacLc {
-		if state.isAtmosMode() {
-			if Config.QualityFallback == "best-available" {
-				fmt.Println("Atmos unavailable, falling back to AAC-LC")
-				needDlAacLc = true
-				track.Codec = "AAC"
-			} else {
-				fmt.Println("Unavailable")
-				recordSkip(trackDBItem(state, track, ""), "unavailable")
-				state.Counter.Unavailable++
-				return
-			}
-		} else if Config.QualityFallback == "best-available" {
-			fmt.Println("Lossless unavailable, falling back to AAC-LC")
+		if message, fallback := aacFallbackMessage(state); fallback {
+			fmt.Println(message)
 			needDlAacLc = true
 			track.Codec = "AAC"
 		} else {
@@ -865,7 +864,7 @@ func ripTrack(state *sessionState, track *task.Track, token string, mediaUserTok
 	lrcFilename := fmt.Sprintf("%s.%s", forbiddenNames.ReplaceAllString(songName, "_"), Config.LrcFormat)
 	track.SavePath = trackPath
 	dbItem := trackDBItem(state, track, trackPath)
-	if ok, saved, err := appDB.Downloaded(dbItem); err == nil && ok {
+	if ok, saved, err := existingDownload(dbItem); err == nil && ok {
 		fmt.Println("Track already recorded in database.")
 		if saved.SavePath == "" {
 			saved.SavePath = trackPath
@@ -896,7 +895,7 @@ func ripTrack(state *sessionState, track *task.Track, token string, mediaUserTok
 		return
 	}
 	defer unlockDownload()
-	if ok, saved, err := appDB.Downloaded(dbItem); err == nil && ok {
+	if ok, saved, err := existingDownload(dbItem); err == nil && ok {
 		fmt.Println("Track already recorded in database.")
 		markTrackSkipped(state, track, saved.SavePath, "already-downloaded")
 		return
@@ -1703,13 +1702,10 @@ func main() {
 		return
 	}
 
-	token := Config.AuthorizationToken
-	if token == "" {
-		token, err = ampapi.GetToken()
-		if err != nil {
-			fmt.Println("Failed to get token.")
-			return
-		}
+	token, err := resolveAuthorizationToken(Config.AuthorizationToken, ampapi.GetToken)
+	if err != nil {
+		fmt.Println("Failed to get token.")
+		return
 	}
 
 	args := pflag.Args()

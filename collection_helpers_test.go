@@ -48,8 +48,11 @@ func TestMarkTrackSkippedOnlyListsExistingOrDownloadedPaths(t *testing.T) {
 	if state.AddedTracks[0].Path != "/music/Song.m4a" {
 		t.Fatalf("added path = %q, want /music/Song.m4a", state.AddedTracks[0].Path)
 	}
-	if runSummary.Counts.Skipped != 2 {
-		t.Fatalf("summary skipped count = %d, want 2", runSummary.Counts.Skipped)
+	if runSummary.Counts.Skipped != 1 {
+		t.Fatalf("summary skipped count = %d, want 1 terminal result", runSummary.Counts.Skipped)
+	}
+	if len(runSummary.Skipped) != 1 || runSummary.Skipped[0].Reason != "file-exists" {
+		t.Fatalf("summary skipped = %#v, want final file-exists result", runSummary.Skipped)
 	}
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -134,6 +135,66 @@ func TestDownloadDBConfiguresWALAndBusyTimeout(t *testing.T) {
 	}
 	if busyTimeout < 5000 {
 		t.Fatalf("busy_timeout = %d, want at least 5000", busyTimeout)
+	}
+}
+
+func TestExistingDownloadRequiresRecordedFile(t *testing.T) {
+	oldDB := appDB
+	t.Cleanup(func() { appDB = oldDB })
+
+	db, err := OpenDownloadDB(filepath.Join(t.TempDir(), "amdl.db"))
+	if err != nil {
+		t.Fatalf("OpenDownloadDB: %v", err)
+	}
+	defer db.Close()
+	appDB = db
+
+	dir := t.TempDir()
+	existingPath := filepath.Join(dir, "existing.m4a")
+	convertedPath := filepath.Join(dir, "converted.flac")
+	deletedPath := filepath.Join(dir, "deleted.m4a")
+	for _, path := range []string{existingPath, convertedPath, deletedPath} {
+		if err := os.WriteFile(path, []byte("media"), 0644); err != nil {
+			t.Fatalf("WriteFile %s: %v", path, err)
+		}
+	}
+	if err := os.Remove(deletedPath); err != nil {
+		t.Fatalf("Remove deleted fixture: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		id      string
+		path    string
+		want    bool
+		wantErr bool
+	}{
+		{name: "existing", id: "existing", path: existingPath, want: true},
+		{name: "converted", id: "converted", path: convertedPath, want: true},
+		{name: "missing", id: "missing", path: filepath.Join(dir, "missing.m4a")},
+		{name: "empty", id: "empty", path: ""},
+		{name: "deleted", id: "deleted", path: deletedPath},
+		{name: "directory", id: "directory", path: dir},
+		{name: "stat error", id: "stat-error", path: filepath.Join(dir, strings.Repeat("x", 5000)), wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			item := DBItem{Storefront: "us", MediaType: "song", AppleID: tt.id, Codec: "ALAC", SavePath: tt.path}
+			if err := db.RecordDownload(item); err != nil {
+				t.Fatalf("RecordDownload: %v", err)
+			}
+			ok, _, err := existingDownload(item)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("existingDownload error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if ok != tt.want {
+				t.Fatalf("existingDownload ok = %v, want %v", ok, tt.want)
+			}
+			if rawOK, _, rawErr := db.Downloaded(item); rawErr != nil || !rawOK {
+				t.Fatalf("stale row was removed: ok=%v err=%v", rawOK, rawErr)
+			}
+		})
 	}
 }
 

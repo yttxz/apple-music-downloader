@@ -322,7 +322,7 @@ retry-backoff-ms: 500
 request-timeout-seconds: 30
 
 allow-nonlocal-wrapper: false
-quality-fallback: "skip"      # skip | best-available
+quality-fallback: "best-available" # skip | best-available
 
 artist-filter-singles-eps: false
 artist-filter-live: false

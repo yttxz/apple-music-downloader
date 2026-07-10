@@ -58,3 +58,28 @@ alac/prog.m3u8
 		t.Fatalf("track.Quality = %q, want 24B-96.0kHz", track.Quality)
 	}
 }
+
+func TestAACFallbackCoversLosslessAndAtmos(t *testing.T) {
+	oldConfig := Config
+	oldAtmos := dl_atmos
+	t.Cleanup(func() {
+		Config = oldConfig
+		dl_atmos = oldAtmos
+	})
+
+	Config = defaultConfig()
+	dl_atmos = false
+	if message, ok := aacFallbackMessage(newSessionState("")); !ok || !strings.Contains(message, "Lossless") {
+		t.Fatalf("lossless fallback = (%q, %v), want enabled", message, ok)
+	}
+
+	dl_atmos = true
+	if message, ok := aacFallbackMessage(newSessionState("")); !ok || !strings.Contains(message, "Atmos") {
+		t.Fatalf("Atmos fallback = (%q, %v), want enabled", message, ok)
+	}
+
+	Config.QualityFallback = "skip"
+	if message, ok := aacFallbackMessage(newSessionState("")); ok || message != "" {
+		t.Fatalf("strict fallback = (%q, %v), want disabled", message, ok)
+	}
+}

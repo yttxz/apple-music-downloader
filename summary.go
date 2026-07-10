@@ -46,8 +46,9 @@ func (s *RunSummary) RecordDownloaded(item DBItem) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.Counts.Downloaded++
+	s.removeItemLocked(item)
 	s.Downloaded = append(s.Downloaded, summaryItemFromDB(item, "", ""))
+	s.syncCountsLocked()
 }
 
 func (s *RunSummary) RecordSkipped(item DBItem, reason string) {
@@ -56,8 +57,9 @@ func (s *RunSummary) RecordSkipped(item DBItem, reason string) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.Counts.Skipped++
+	s.removeItemLocked(item)
 	s.Skipped = append(s.Skipped, summaryItemFromDB(item, reason, ""))
+	s.syncCountsLocked()
 }
 
 func (s *RunSummary) RecordFailed(item DBItem, err error) {
@@ -70,8 +72,40 @@ func (s *RunSummary) RecordFailed(item DBItem, err error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.Counts.Failed++
+	s.removeItemLocked(item)
 	s.Failed = append(s.Failed, summaryItemFromDB(item, "", errText))
+	s.syncCountsLocked()
+}
+
+func (s *RunSummary) removeItemLocked(item DBItem) {
+	if item.AppleID == "" {
+		return
+	}
+	s.Downloaded = removeSummaryItem(s.Downloaded, item)
+	s.Skipped = removeSummaryItem(s.Skipped, item)
+	s.Failed = removeSummaryItem(s.Failed, item)
+}
+
+func (s *RunSummary) syncCountsLocked() {
+	s.Counts = SummaryCounts{
+		Downloaded: len(s.Downloaded),
+		Skipped:    len(s.Skipped),
+		Failed:     len(s.Failed),
+	}
+}
+
+func removeSummaryItem(items []SummaryItem, target DBItem) []SummaryItem {
+	kept := items[:0]
+	for _, item := range items {
+		if item.Storefront == target.Storefront &&
+			item.MediaType == target.MediaType &&
+			item.AppleID == target.AppleID &&
+			item.Codec == target.Codec {
+			continue
+		}
+		kept = append(kept, item)
+	}
+	return kept
 }
 
 func (s *RunSummary) PrintJSON() error {

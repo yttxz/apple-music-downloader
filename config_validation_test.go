@@ -45,6 +45,15 @@ func TestValidateConfigAcceptsValidConfig(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigUsesBestAvailableFallback(t *testing.T) {
+	if got := defaultConfig().QualityFallback; got != "best-available" {
+		t.Fatalf("default quality fallback = %q, want best-available", got)
+	}
+	if got := managedConfigDefaults["quality-fallback"]; got != "best-available" {
+		t.Fatalf("managed quality fallback = %#v, want best-available", got)
+	}
+}
+
 func TestValidateConfigRejectsInvalidValues(t *testing.T) {
 	tests := []struct {
 		name    string

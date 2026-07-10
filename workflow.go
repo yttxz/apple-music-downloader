@@ -115,6 +115,27 @@ func recordFailure(item DBItem, err error) {
 	runSummary.RecordFailed(item, err)
 }
 
+func existingDownload(item DBItem) (bool, DBItem, error) {
+	ok, saved, err := appDB.Downloaded(item)
+	if err != nil || !ok {
+		return ok, saved, err
+	}
+	if saved.SavePath == "" {
+		return false, saved, nil
+	}
+	info, err := os.Stat(saved.SavePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, saved, nil
+		}
+		return false, saved, err
+	}
+	if !info.Mode().IsRegular() {
+		return false, saved, nil
+	}
+	return true, saved, nil
+}
+
 func dbItemFromURL(rawURL string) DBItem {
 	if storefront, id := checkUrl(rawURL); storefront != "" {
 		return DBItem{Storefront: storefront, MediaType: "album", AppleID: id}

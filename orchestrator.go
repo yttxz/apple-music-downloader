@@ -152,7 +152,7 @@ func processDownloadURL(state *sessionState, job downloadJob, token string) {
 		}
 		storefront, albumId = checkUrlMv(urlRaw)
 		mvDBItem := DBItem{Storefront: storefront, MediaType: "music-video", AppleID: albumId, Codec: "MV", Quality: fmt.Sprintf("%dp", Config.MVMax), SourceURL: urlRaw}
-		if ok, saved, err := appDB.Downloaded(mvDBItem); err == nil && ok {
+		if ok, saved, err := existingDownload(mvDBItem); err == nil && ok {
 			state.Logln("MV already recorded in database.")
 			recordSkip(saved, "already-downloaded")
 			state.Counter.Success++
@@ -166,7 +166,7 @@ func processDownloadURL(state *sessionState, job downloadJob, token string) {
 			return
 		}
 		defer unlockDownload()
-		if ok, saved, err := appDB.Downloaded(mvDBItem); err == nil && ok {
+		if ok, saved, err := existingDownload(mvDBItem); err == nil && ok {
 			state.Logln("MV already recorded in database.")
 			recordSkip(saved, "already-downloaded")
 			state.Counter.Success++
