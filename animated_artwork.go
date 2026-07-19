@@ -47,7 +47,7 @@ func saveAnimatedArtworkVariant(folderPath string, label string, video string) {
 	displayLabel := animatedArtworkDisplayLabel(label)
 	fmt.Printf("Animation Artwork %s Downloading...\n", displayLabel)
 	if err := runCommandWithAtomicOutput(outPath, func(tempPath string) *exec.Cmd {
-		return exec.Command(Config.FFmpegPath, "-loglevel", "quiet", "-y", "-i", motionVideoURL, "-c", "copy", tempPath)
+		return exec.Command(Config.FFmpegPath, "-loglevel", "error", "-y", "-i", motionVideoURL, "-c", "copy", tempPath)
 	}); err != nil {
 		fmt.Printf("animated artwork %s dl err: %v\n", label, err)
 		return

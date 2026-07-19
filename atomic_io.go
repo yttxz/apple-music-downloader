@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 func writeFileAtomic(path string, perm os.FileMode, write func(*os.File) error) error {
@@ -71,7 +73,19 @@ func tempPathInDestination(finalPath string) (string, func(bool), error) {
 	if err := os.MkdirAll(filepath.Dir(finalPath), 0755); err != nil {
 		return "", nil, err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(finalPath), "."+filepath.Base(finalPath)+".tmp-*")
+	base := filepath.Base(finalPath)
+	ext := filepath.Ext(base)
+	stem := strings.TrimSuffix(base, ext)
+	// filepath.Ext treats a dotfile such as ".cover" as having an extension
+	// equal to its entire name. Keep that name as the stem instead.
+	if stem == "" {
+		stem = base
+		ext = ""
+	}
+	// Keep the final extension at the end of the temporary name. Tools such as
+	// FFmpeg infer the output container from the path extension.
+	tmpPattern := "." + stem + ".tmp-*" + ext
+	tmp, err := os.CreateTemp(filepath.Dir(finalPath), tmpPattern)
 	if err != nil {
 		return "", nil, err
 	}
@@ -103,7 +117,14 @@ func runCommandWithAtomicOutput(finalPath string, build func(tempPath string) *e
 	defer cleanup(false)
 	_ = os.Remove(tempPath)
 	cmd := build(tempPath)
+	var stderr bytes.Buffer
+	if cmd.Stderr == nil {
+		cmd.Stderr = &stderr
+	}
 	if err := cmd.Run(); err != nil {
+		if diagnostic := strings.TrimSpace(stderr.String()); diagnostic != "" {
+			return fmt.Errorf("%w: %s", err, diagnostic)
+		}
 		return err
 	}
 	if err := renameTempIntoPlace(tempPath, finalPath); err != nil {
