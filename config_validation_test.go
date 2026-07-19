@@ -34,6 +34,7 @@ func validConfigForTest() structs.ConfigSet {
 		RetryCount:            3,
 		RetryBackoffMS:        500,
 		RequestTimeoutSeconds: 30,
+		ArtworkTimeoutSeconds: 180,
 		QualityFallback:       "skip",
 	}
 }
@@ -99,6 +100,11 @@ func TestValidateConfigRejectsInvalidValues(t *testing.T) {
 			name:    "quality fallback",
 			mutate:  func(c *structs.ConfigSet) { c.QualityFallback = "always" },
 			wantErr: "quality-fallback",
+		},
+		{
+			name:    "artwork timeout",
+			mutate:  func(c *structs.ConfigSet) { c.ArtworkTimeoutSeconds = 0 },
+			wantErr: "artwork-timeout-seconds",
 		},
 	}
 

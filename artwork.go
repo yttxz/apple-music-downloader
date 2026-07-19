@@ -62,9 +62,9 @@ func writeCover(sanAlbumFolder, name string, url string) (string, error) {
 		return "", err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-	do, err := httpClient.Do(req)
+	do, err := artworkHTTPClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("request cover: %w", err)
 	}
 	defer do.Body.Close()
 	if do.StatusCode != http.StatusOK {
@@ -81,10 +81,10 @@ func writeCover(sanAlbumFolder, name string, url string) (string, error) {
 				return "", err
 			}
 			req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-			do, err = httpClient.Do(req)
+			do, err = artworkHTTPClient.Do(req)
 			if err != nil {
 				fmt.Println("Failed to get cover from fallback url.")
-				return "", err
+				return "", fmt.Errorf("request fallback cover: %w", err)
 			}
 			defer do.Body.Close()
 			if do.StatusCode != http.StatusOK {
@@ -96,7 +96,7 @@ func writeCover(sanAlbumFolder, name string, url string) (string, error) {
 		}
 	}
 	if err := copyToFileAtomic(covPath, 0644, do.Body); err != nil {
-		return "", err
+		return "", fmt.Errorf("write cover %s: %w", covPath, err)
 	}
 	return covPath, nil
 }

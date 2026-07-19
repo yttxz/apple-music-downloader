@@ -1015,7 +1015,7 @@ func ripTrack(state *sessionState, track *task.Track, token string, mediaUserTok
 		if (strings.Contains(track.PreID, "pl.") || strings.Contains(track.PreID, "ra.")) && Config.DlAlbumcoverForPlaylist {
 			track.CoverPath, err = writeCover(track.SaveDir, track.ID, track.Resp.Attributes.Artwork.URL)
 			if err != nil {
-				fmt.Println("Failed to write cover.")
+				fmt.Printf("Failed to write cover: %v\n", err)
 			}
 		}
 		tags = append(tags, fmt.Sprintf("cover=%s", track.CoverPath))
@@ -1106,7 +1106,7 @@ func ripStation(state *sessionState, albumId string, token string, storefront st
 
 	covPath, err := writeCover(playlistFolderPath, "cover", meta.Data[0].Attributes.Artwork.URL)
 	if err != nil {
-		fmt.Println("Failed to write cover.")
+		fmt.Printf("Failed to write cover: %v\n", err)
 	}
 	station.CoverPath = covPath
 
@@ -1335,13 +1335,13 @@ func ripAlbum(state *sessionState, albumId string, token string, storefront stri
 		if meta.Data[0].Relationships.Artists.Data[0].Attributes.Artwork.Url != "" {
 			_, err = writeCover(singerFolder, "folder", meta.Data[0].Relationships.Artists.Data[0].Attributes.Artwork.Url)
 			if err != nil {
-				fmt.Println("Failed to write artist cover.")
+				fmt.Printf("Failed to write artist cover: %v\n", err)
 			}
 		}
 	}
 	covPath, err := writeCover(albumFolderPath, "cover", meta.Data[0].Attributes.Artwork.URL)
 	if err != nil {
-		fmt.Println("Failed to write cover.")
+		fmt.Printf("Failed to write cover: %v\n", err)
 	}
 	saveAnimatedArtwork(albumFolderPath, meta.Data[0].Attributes.EditorialVideo.MotionDetailSquare.Video, meta.Data[0].Attributes.EditorialVideo.MotionDetailTall.Video)
 	for i := range album.Tracks {
@@ -1456,7 +1456,7 @@ func ripPlaylist(state *sessionState, playlistId string, token string, storefron
 	}
 	covPath, err := writeCover(playlistFolderPath, "cover", meta.Data[0].Attributes.Artwork.URL)
 	if err != nil {
-		fmt.Println("Failed to write cover.")
+		fmt.Printf("Failed to write cover: %v\n", err)
 	}
 
 	for i := range playlist.Tracks {

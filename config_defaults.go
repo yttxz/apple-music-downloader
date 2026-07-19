@@ -53,6 +53,7 @@ func defaultConfig() structs.ConfigSet {
 		RetryCount:                 3,
 		RetryBackoffMS:             500,
 		RequestTimeoutSeconds:      30,
+		ArtworkTimeoutSeconds:      180,
 		QualityFallback:            "best-available",
 	}
 }

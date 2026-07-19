@@ -35,6 +35,7 @@ requests-per-minute: 60       # Set -1 for no rate limit
 retry-count: 3
 retry-backoff-ms: 500
 request-timeout-seconds: 30
+artwork-timeout-seconds: 180 # Separate allowance for large cover image transfers
 allow-nonlocal-wrapper: false # Keep wrapper ports loopback-only by default
 quality-fallback: "best-available" # skip | best-available
 

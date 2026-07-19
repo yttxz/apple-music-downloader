@@ -77,6 +77,9 @@ func validateConfig(config *structs.ConfigSet) error {
 	if config.RequestTimeoutSeconds <= 0 || config.RequestTimeoutSeconds > 3600 {
 		return fmt.Errorf("invalid request-timeout-seconds %d: expected 1-3600", config.RequestTimeoutSeconds)
 	}
+	if config.ArtworkTimeoutSeconds <= 0 || config.ArtworkTimeoutSeconds > 3600 {
+		return fmt.Errorf("invalid artwork-timeout-seconds %d: expected 1-3600", config.ArtworkTimeoutSeconds)
+	}
 	if !validOutputRoot(config.AlacSaveFolder) || !validOutputRoot(config.AtmosSaveFolder) || !validOutputRoot(config.AacSaveFolder) || !validOutputRoot(config.MVSaveFolder) {
 		return fmt.Errorf("invalid output folder: output folders must be non-empty and must not point above the current directory")
 	}

@@ -13,8 +13,13 @@ var httpClient = &http.Client{
 	Timeout: 30 * time.Second,
 }
 
+var artworkHTTPClient = &http.Client{
+	Timeout: 180 * time.Second,
+}
+
 func configureHTTPClients() {
 	timeout := time.Duration(Config.RequestTimeoutSeconds) * time.Second
+	artworkTimeout := time.Duration(Config.ArtworkTimeoutSeconds) * time.Second
 	backoff := time.Duration(Config.RetryBackoffMS) * time.Millisecond
 	retryConfig := httpx.RetryConfig{
 		Timeout:           timeout,
@@ -23,6 +28,9 @@ func configureHTTPClients() {
 		RequestsPerMinute: Config.RequestsPerMinute,
 	}
 	httpClient = httpx.NewClient(retryConfig)
+	artworkRetryConfig := retryConfig
+	artworkRetryConfig.Timeout = artworkTimeout
+	artworkHTTPClient = httpx.NewClient(artworkRetryConfig)
 	ampapi.ConfigureHTTPClient(retryConfig)
 	lyrics.ConfigureHTTPClient(retryConfig)
 	runv3.ConfigureHTTPClient(retryConfig)

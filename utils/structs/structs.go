@@ -65,6 +65,7 @@ type ConfigSet struct {
 	RetryCount                 int    `yaml:"retry-count"`
 	RetryBackoffMS             int    `yaml:"retry-backoff-ms"`
 	RequestTimeoutSeconds      int    `yaml:"request-timeout-seconds"`
+	ArtworkTimeoutSeconds      int    `yaml:"artwork-timeout-seconds"`
 	AllowNonlocalWrapper       bool   `yaml:"allow-nonlocal-wrapper"`
 	ArtistFilterSinglesEPs     bool   `yaml:"artist-filter-singles-eps"`
 	ArtistFilterLive           bool   `yaml:"artist-filter-live"`
