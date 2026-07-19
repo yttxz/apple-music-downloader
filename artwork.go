@@ -11,6 +11,10 @@ import (
 )
 
 func writeCover(sanAlbumFolder, name string, url string) (string, error) {
+	return writeCoverWithLabel(sanAlbumFolder, name, url, "Artwork")
+}
+
+func writeCoverWithLabel(sanAlbumFolder, name string, url string, progressLabel string) (string, error) {
 	originalUrl := url
 	var ext string
 	var covPath string
@@ -95,9 +99,11 @@ func writeCover(sanAlbumFolder, name string, url string) (string, error) {
 			return "", errors.New(do.Status)
 		}
 	}
-	if err := copyToFileAtomic(covPath, 0644, do.Body); err != nil {
+	progress := newArtworkProgressReader(do.Body, do.ContentLength, progressLabel)
+	if err := copyToFileAtomic(covPath, 0644, progress); err != nil {
 		return "", fmt.Errorf("write cover %s: %w", covPath, err)
 	}
+	progress.Finish()
 	return covPath, nil
 }
 

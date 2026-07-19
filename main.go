@@ -1331,17 +1331,21 @@ func ripAlbum(state *sessionState, albumId string, token string, storefront stri
 	}
 	album.SaveName = albumFolderName
 	fmt.Println(albumFolderName)
+	var artistArtworkURL string
 	if Config.SaveArtistCover && len(meta.Data[0].Relationships.Artists.Data) > 0 {
-		if meta.Data[0].Relationships.Artists.Data[0].Attributes.Artwork.Url != "" {
-			_, err = writeCover(singerFolder, "folder", meta.Data[0].Relationships.Artists.Data[0].Attributes.Artwork.Url)
-			if err != nil {
-				fmt.Printf("Failed to write artist cover: %v\n", err)
-			}
-		}
+		artistArtworkURL = meta.Data[0].Relationships.Artists.Data[0].Attributes.Artwork.Url
 	}
-	covPath, err := writeCover(albumFolderPath, "cover", meta.Data[0].Attributes.Artwork.URL)
-	if err != nil {
-		fmt.Printf("Failed to write cover: %v\n", err)
+	covPath, coverErr, artistCoverErr := writeAlbumAndArtistCovers(
+		singerFolder,
+		albumFolderPath,
+		artistArtworkURL,
+		meta.Data[0].Attributes.Artwork.URL,
+	)
+	if artistCoverErr != nil {
+		fmt.Printf("Failed to write artist cover: %v\n", artistCoverErr)
+	}
+	if coverErr != nil {
+		fmt.Printf("Failed to write cover: %v\n", coverErr)
 	}
 	saveAnimatedArtwork(albumFolderPath, meta.Data[0].Attributes.EditorialVideo.MotionDetailSquare.Video, meta.Data[0].Attributes.EditorialVideo.MotionDetailTall.Video)
 	for i := range album.Tracks {
