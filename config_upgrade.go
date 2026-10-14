@@ -25,9 +25,10 @@ var managedConfigDefaults = map[string]interface{}{
 	"artist-filter-live":             false,
 	"artist-filter-compilations":     false,
 	"artist-filter-duplicates":       false,
+	"lite-server":                    "http://127.0.0.1:12340",
+	"proxy":                          "",
+	"lrc-extra":                      "",
 	"ffmpeg-path":                    "ffmpeg",
-	"mp4box-path":                    "MP4Box",
-	"mp4decrypt-path":                "mp4decrypt",
 	"convert-extra-args":             "",
 	"convert-with-metadata":          true,
 	"convert-warn-lossy-to-lossless": true,
@@ -51,9 +52,10 @@ var managedConfigOrder = []string{
 	"artist-filter-live",
 	"artist-filter-compilations",
 	"artist-filter-duplicates",
+	"lite-server",
+	"proxy",
+	"lrc-extra",
 	"ffmpeg-path",
-	"mp4box-path",
-	"mp4decrypt-path",
 	"convert-extra-args",
 	"convert-with-metadata",
 	"convert-warn-lossy-to-lossless",
@@ -62,6 +64,10 @@ var managedConfigOrder = []string{
 
 func missingManagedConfigKeys(path string) ([]string, error) {
 	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	data, err = normalizeConfigData(data)
 	if err != nil {
 		return nil, err
 	}

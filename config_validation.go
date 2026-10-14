@@ -3,10 +3,11 @@ package main
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"regexp"
 	"strings"
 
-	"apple-music-downloader/utils/structs"
+	"amdl/utils/structs"
 
 	"github.com/kballard/go-shellquote"
 )
@@ -44,8 +45,8 @@ func validateConfig(config *structs.ConfigSet) error {
 	if config.LimitMax <= 0 {
 		return fmt.Errorf("invalid limit-max %d: expected a positive value", config.LimitMax)
 	}
-	if config.AlacMax <= 0 {
-		return fmt.Errorf("invalid alac-max %d: expected a positive value", config.AlacMax)
+	if config.AlacMax < 0 {
+		return fmt.Errorf("invalid alac-max %d: expected zero or a positive value", config.AlacMax)
 	}
 	if config.AtmosMax <= 0 {
 		return fmt.Errorf("invalid atmos-max %d: expected a positive value", config.AtmosMax)
@@ -82,6 +83,18 @@ func validateConfig(config *structs.ConfigSet) error {
 	}
 	if !validOutputRoot(config.AlacSaveFolder) || !validOutputRoot(config.AtmosSaveFolder) || !validOutputRoot(config.AacSaveFolder) || !validOutputRoot(config.MVSaveFolder) {
 		return fmt.Errorf("invalid output folder: output folders must be non-empty and must not point above the current directory")
+	}
+	if config.LiteServer != "" {
+		u, err := url.Parse(config.LiteServer)
+		if err != nil || u.Host == "" || !oneOf(u.Scheme, "http", "https") {
+			return fmt.Errorf("invalid lite-server: expected an HTTP or HTTPS URL")
+		}
+		if !config.AllowNonlocalWrapper && u.Hostname() != "localhost" {
+			ip := net.ParseIP(u.Hostname())
+			if ip == nil || !ip.IsLoopback() {
+				return fmt.Errorf("invalid lite-server: expected loopback unless allow-nonlocal-wrapper is true")
+			}
+		}
 	}
 	if !config.AllowNonlocalWrapper {
 		if err := validateLoopbackAddress(config.DecryptM3u8Port, "decrypt-m3u8-port"); err != nil {

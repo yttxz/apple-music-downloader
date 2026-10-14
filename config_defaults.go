@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"apple-music-downloader/utils/structs"
+	"amdl/utils/structs"
 )
 
 const defaultConfigPath = "config.yaml"
@@ -13,6 +13,8 @@ const defaultConfigPath = "config.yaml"
 func defaultConfig() structs.ConfigSet {
 	return structs.ConfigSet{
 		Storefront:                 "us",
+		LiteServer:                 "http://127.0.0.1:12340",
+		ALACFix:                    true,
 		LrcType:                    "lyrics",
 		LrcFormat:                  "lrc",
 		EmbedLrc:                   true,
@@ -60,7 +62,7 @@ func defaultConfig() structs.ConfigSet {
 
 func configPathFromArgs(args []string) string {
 	for i, arg := range args {
-		if arg == "--config" && i+1 < len(args) {
+		if (arg == "--config" || arg == "-c") && i+1 < len(args) {
 			return args[i+1]
 		}
 		if strings.HasPrefix(arg, "--config=") {

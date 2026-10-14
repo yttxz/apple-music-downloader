@@ -1,6 +1,9 @@
 package structs
 
 type ConfigSet struct {
+	Proxy                      string `yaml:"proxy"`
+	LiteServer                 string `yaml:"lite-server"`
+	LrcExtra                   string `yaml:"lrc-extra"`
 	Storefront                 string `yaml:"storefront"`
 	MediaUserToken             string `yaml:"media-user-token"`
 	AuthorizationToken         string `yaml:"authorization-token"`

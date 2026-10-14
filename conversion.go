@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"apple-music-downloader/utils/task"
+	task "amdl/internal/model"
 
 	"github.com/kballard/go-shellquote"
 )

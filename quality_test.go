@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"apple-music-downloader/utils/task"
+	task "amdl/internal/model"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

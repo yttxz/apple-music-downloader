@@ -1,11 +1,13 @@
 package main
 
 import (
+	widevinerip "amdl/internal/widevine-rip"
+	"context"
 	"errors"
 	"strings"
 	"testing"
 
-	"apple-music-downloader/utils/ampapi"
+	ampapi "amdl/internal/amp-api"
 )
 
 func TestMVDownloaderReturnsManifestError(t *testing.T) {
@@ -31,7 +33,7 @@ func TestMVDownloaderReturnsVideoDecryptError(t *testing.T) {
 	oldConfig := Config
 	oldGetMusicVideoResp := getMusicVideoResp
 	oldGetMVWebplayback := getMVWebplayback
-	oldRunMVDownload := runMVDownload
+	oldRunMVDownload := fetchMVStream
 	oldExtractMVData := extractMVData
 	oldExtractMVVideoURL := extractMVVideoURL
 	oldExtractMVAudioURL := extractMVAudioURL
@@ -39,7 +41,7 @@ func TestMVDownloaderReturnsVideoDecryptError(t *testing.T) {
 		Config = oldConfig
 		getMusicVideoResp = oldGetMusicVideoResp
 		getMVWebplayback = oldGetMVWebplayback
-		runMVDownload = oldRunMVDownload
+		fetchMVStream = oldRunMVDownload
 		extractMVData = oldExtractMVData
 		extractMVVideoURL = oldExtractMVVideoURL
 		extractMVAudioURL = oldExtractMVAudioURL
@@ -53,19 +55,19 @@ func TestMVDownloaderReturnsVideoDecryptError(t *testing.T) {
 		resp.Data[0].Attributes.AlbumName = "Album"
 		return resp, nil
 	}
-	getMVWebplayback = func(adamId string, authtoken string, mutoken string, mvmode bool) (string, string, string, error) {
-		return "master.m3u8", "", "", nil
+	getMVWebplayback = func(server string, adamId string) (string, error) {
+		return "master.m3u8", nil
 	}
-	extractMVVideoURL = func(c string, selectVideo bool) (string, error) {
-		return "video.m3u8", nil
+	extractMVVideoURL = func(c string, selectVideo bool) (string, bool, error) {
+		return "video.m3u8", false, nil
 	}
 	extractMVAudioURL = func(c string) (string, error) {
 		return "audio.m3u8", nil
 	}
-	runMVDownload = func(adamId string, trackpath string, authtoken string, mutoken string, mvmode bool, serverUrl string) (string, error) {
-		return "key-and-urls", nil
+	fetchMVStream = func(ctx context.Context, adamId, url, server string, playReady bool) (widevinerip.EncryptedStream, error) {
+		return widevinerip.EncryptedStream{}, nil
 	}
-	extractMVData = func(keyAndUrls string, savePath string, mp4DecryptPath ...string) error {
+	extractMVData = func(ctx context.Context, stream widevinerip.EncryptedStream, savePath string) error {
 		return errors.New("decrypt failed")
 	}
 

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"apple-music-downloader/utils/structs"
+	"amdl/utils/structs"
 )
 
 func validConfigForTest() structs.ConfigSet {

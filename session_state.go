@@ -4,7 +4,7 @@ import (
 	"strings"
 	"sync"
 
-	"apple-music-downloader/utils/structs"
+	"amdl/utils/structs"
 )
 
 type sessionState struct {
@@ -67,6 +67,9 @@ func (s *sessionState) alacMax() int {
 		if sampleRate := audioFormatSampleRate(*s.SelectedAudioFormat); sampleRate > 0 {
 			return sampleRate
 		}
+	}
+	if Config.AlacMax == 0 {
+		return 192000
 	}
 	return Config.AlacMax
 }

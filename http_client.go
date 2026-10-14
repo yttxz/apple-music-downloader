@@ -1,10 +1,12 @@
 package main
 
 import (
-	"apple-music-downloader/utils/ampapi"
-	"apple-music-downloader/utils/httpx"
-	"apple-music-downloader/utils/lyrics"
-	"apple-music-downloader/utils/runv3"
+	ampapi "amdl/internal/amp-api"
+	"amdl/internal/download"
+	widevinerip "amdl/internal/widevine-rip"
+	"amdl/internal/wrapper"
+	"amdl/utils/httpx"
+
 	"net/http"
 	"time"
 )
@@ -17,7 +19,7 @@ var artworkHTTPClient = &http.Client{
 	Timeout: 180 * time.Second,
 }
 
-func configureHTTPClients() {
+func configureHTTPClients() error {
 	timeout := time.Duration(Config.RequestTimeoutSeconds) * time.Second
 	artworkTimeout := time.Duration(Config.ArtworkTimeoutSeconds) * time.Second
 	backoff := time.Duration(Config.RetryBackoffMS) * time.Millisecond
@@ -27,12 +29,17 @@ func configureHTTPClients() {
 		RetryBackoff:      backoff,
 		RequestsPerMinute: Config.RequestsPerMinute,
 	}
+	if err := download.Init(Config.Proxy); err != nil {
+		return err
+	}
 	httpClient = httpx.NewClient(retryConfig)
+	httpClient.Transport.(*httpx.RetryTransport).Base = download.Client.Transport
 	artworkRetryConfig := retryConfig
 	artworkRetryConfig.Timeout = artworkTimeout
 	artworkHTTPClient = httpx.NewClient(artworkRetryConfig)
-	ampapi.ConfigureHTTPClient(retryConfig)
-	lyrics.ConfigureHTTPClient(retryConfig)
-	runv3.ConfigureHTTPClient(retryConfig)
-	runv3.ConfigureMVSegmentConcurrency(Config.MVSegmentConcurrency)
+	artworkHTTPClient.Transport.(*httpx.RetryTransport).Base = download.Client.Transport
+	ampapi.ConfigureHTTPClientWithTransport(retryConfig, download.Client.Transport)
+	wrapper.ControlClient = &http.Client{Timeout: timeout, Transport: download.Client.Transport}
+	widevinerip.ConfigureStreamDownloads(Config.MVSegmentConcurrency, Config.RetryCount)
+	return nil
 }
