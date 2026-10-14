@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"apple-music-downloader/utils/task"
+	task "amdl/internal/model"
 )
 
 func TestConvertIfNeededUsesFakeFFmpegSafely(t *testing.T) {

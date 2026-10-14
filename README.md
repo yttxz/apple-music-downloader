@@ -1,370 +1,491 @@
 # Apple Music ALAC / Dolby Atmos Downloader
 
-[English](./README.md) | [简体中文](./README-CN.md)
+[English](./README.md) | [简体中文](./README-CN.md) | [Cloud Server / Proxy Setup](./PROXY-SETUP.md)
 
 > **Original script by Sorrow.** Modified with fixes and improvements.
 
----
+This command-line tool downloads albums, songs, playlists, stations and music videos from Apple Music, preserves or embeds metadata and lyrics, and supports ALAC, AAC and Dolby Atmos. Use it only with content you are entitled to access and in accordance with Apple's terms and applicable law.
 
-## ⚠️ Prerequisites
+## Fork workflows and upgrading
 
-**Must be installed first:**
+This fork integrates [Zhaarey's upstream](https://github.com/zhaarey/apple-music-downloader) through `4741380` (2026-09-28). The current engine requires **wrapper-lite**, configured with `general.lite-server` (default `http://127.0.0.1:12340`). The old TCP wrapper ports and Frida scripts no longer power downloads. MP4Box and mp4decrypt are no longer required. FFmpeg remains optional for conversions and animated artwork.
 
-- **[MP4Box](https://gpac.io/downloads/gpac-nightly-builds/)** - Ensure it's correctly added to your environment variables
-- **[wrapper](https://github.com/WorldObservationLog/wrapper)** - Decryption program must be running before use
+Existing flat `config.yaml` files continue to work. Upstream's nested `general`, `media`, `paths`, `metadata`, and `convert` sections also work; an explicit nested value wins over its flat alias. Credentials, output paths, and explicit `false`/`0` values are preserved. Fork workflow controls remain at the top level of either config format. `--config-upgrade` prints missing fork options; `--migrate-config --yes` adds upstream options with a backup and preserves existing values.
 
-**Optional (for MV download):**
+```sh
+# Native Apple Silicon build/package, with embedded default configuration:
+make package-macos-arm64
 
-- **[mp4decrypt](https://www.bento4.com/downloads/)**
+# Configuration and backend checks:
+go run . --config config.yaml --config-validate
+go run . --config config.yaml --doctor
 
----
+# Batch input, detailed summaries, direct IDs and previews:
+go run . --file urls.txt --json-summary
+go run . --id-type album --id 1624945511 --storefront us
+go run . --dry-run --no-db https://music.apple.com/us/album/example/1624945511
 
-## ✨ Features
+# Durable SQLite records and failed-item repair:
+go run . --db-list downloads
+go run . --db-list failed
+go run . --repair
 
-1. **Inline Covers & LRC Lyrics** - Requires `media-user-token` (see instructions below)
-2. **Word-by-word & Out-of-sync Lyrics** support
-3. **Artist Album Download** - Automatically download all albums from an artist
-   ```bash
-   go run . https://music.apple.com/us/artist/taylor-swift/159260351 --all-album
-   ```
-4. **Stream Decryption** - Uses Sendy McSenderson's code for download-and-decrypt streaming, solving memory issues with large files
-5. **MV Download** - Requires mp4decrypt installation
-6. **Interactive Search** - Arrow-key navigation for search results
-   ```bash
-   go run . --search [song/album/artist] "search_term"
-   ```
-7. **Durable Download Database** - Completed and failed items are recorded in SQLite so repeat runs can skip known downloads and repair failures
-8. **Safer Output Writes** - Media, covers, lyrics, playlists, conversions, and MV mux output are written through temporary files before replacing final files
-9. **Batch & Streamrip-style Workflows** - Use URL files, direct Apple IDs, dry runs, JSON summaries, doctor checks, and DB inspection commands
-10. **Controlled Parallel Downloads** - `download-concurrency` now runs top-level URL jobs in parallel while keeping interactive `--select` mode serial
-
----
-
-## 🎵 Supported Audio Formats
-
-| Format | Description | Requires Subscription |
-|--------|-------------|----------------------|
-| `alac` | audio-alac-stereo | ✅ |
-| `ec3` | audio-atmos / audio-ec3 | ✅ |
-| `aac` | audio-stereo | ✅ |
-| `aac-lc` | audio-stereo | ✅ |
-| `aac-binaural` | audio-stereo-binaural | ✅ |
-| `aac-downmix` | audio-stereo-downmix | ✅ |
-| `MV` | Music Video | ✅ |
-
-> **Note:** For `aac-lc`, `MV`, and `lyrics`, you must provide a valid `media-user-token` from an active subscription.
-
----
-
-## 🚀 Usage
-
-### Native macOS (Apple Silicon / arm64)
-
-1. Install native arm64 dependencies with Homebrew:
-
-   ```bash
-   brew install go ffmpeg gpac bento4
-   ```
-
-   `gpac` provides `MP4Box`; `bento4` provides `mp4decrypt` for MV/station downloads.
-
-2. Build a native macOS arm64 package:
-
-   ```bash
-   make package-macos-arm64
-   ```
-
-   The packaged binary and default config are written to `dist/darwin-arm64/`, with an archive at `dist/apple-music-dl-darwin-arm64.tar.gz`.
-
-3. Run locally:
-
-   ```bash
-   cd dist/darwin-arm64
-   ./apple-music-dl --help
-   ./apple-music-dl https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511
-   ```
-
-   The app automatically checks common Apple Silicon Homebrew paths such as `/opt/homebrew/bin`. If your tools live elsewhere, set these in `config.yaml`:
-
-   ```yaml
-   ffmpeg-path: "/opt/homebrew/bin/ffmpeg"
-   mp4box-path: "/opt/homebrew/bin/MP4Box"
-   mp4decrypt-path: "/opt/homebrew/bin/mp4decrypt"
-   ```
-
-### Running with Docker
-
-1. Ensure the [wrapper](https://github.com/WorldObservationLog/wrapper) decryption program is running
-
-2. Start the downloader:
-
-```bash
-# Show help
-docker run --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-downloader --help
-
-# Download albums
-docker run --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-downloader https://music.apple.com/ru/album/children-of-forever/1443732441
-
-# Download single song
-docker run --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-downloader --song https://music.apple.com/ru/album/bass-folk-song/1443732441?i=1443732453
-
-# Interactive selection
-docker run -it --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-downloader --select https://music.apple.com/ru/album/children-of-forever/1443732441
-
-# Music video selection / quality picker
-docker run -it --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-downloader --select https://music.apple.com/us/artist/taylor-swift/159260351
-
-# Download playlists
-docker run --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-downloader https://music.apple.com/us/playlist/taylor-swift-essentials/pl.3950454ced8c45a3b0cc693c2a7db97b
-
-# Dolby Atmos
-docker run --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-downloader --atmos https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
-
-# AAC format
-docker run --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-downloader --aac https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
-
-# Debug/View quality
-docker run --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-downloader --debug https://music.apple.com/ru/album/miles-smiles/209407331
+# Non-interactive search and single-song selection:
+go run . --search song --search-first "Never Gonna Give You Up"
+go run . --song 'https://music.apple.com/us/album/example/1624945511?i=1624945512'
 ```
 
-**Custom Configuration:**
+The fork retains controlled parallel URL downloads (`download-concurrency`; interactive selection stays serial), configurable MV segment concurrency, catalog retries/rate limits, separate artwork timeouts and progress, artist filters, quality fallback, JSON reports, database skips, and atomic output writes. Large media streams have no whole-body HTTP deadline. Self-update targets this fork's releases, with checksum validation; local source builds remain marked `dev`.
 
-Mount your own `config.yaml`:
-
-```bash
-docker run --network host -v ./downloads:/downloads -v ./config.yaml:/app/config.yaml ghcr.io/zhaarey/apple-music-downloader [args]
-```
-
-> **Note:** Ensure `config.yaml` exists in your current directory before running. If it doesn't exist, Docker will create an empty directory instead of a file, causing the container to fail.
+For Docker, build this fork locally with `docker build -t apple-music-dl .` and mount `/downloads` plus your config. Public upstream container examples refer to the upstream project, which no longer maintains Docker builds. See [UPSTREAM_SYNC.md](./UPSTREAM_SYNC.md) for the audited change groups and verification limits.
 
 ---
 
-### Running Locally (Go)
+## Contents
 
-If you installed the packaged wrapper command, replace `go run .` with `amdl` in the examples below.
+- [Features](#features)
+- [Supported formats](#supported-formats)
+- [Requirements](#requirements)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Upgrade](#upgrade)
+- [For Developers](#for-developers)
+- [Get media-user-token](#get-media-user-token)
+- [Lyrics options](#lyrics-options)
+- [Credits](#credits)
 
-1. Ensure the [wrapper](https://github.com/WorldObservationLog/wrapper) decryption program is running
+## Features
 
-2. **Download albums:**
-   ```bash
-   go run . https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511
-   ```
+1. Inline cover art and LRC lyrics.
+2. Word-by-word and unsynchronized lyrics.
+3. Artist album downloads.
+4. Streaming download and decryption for large files.
+5. Music-video downloads using in-process mp4ff decryption.
+6. Interactive search and track selection.
 
-3. **Download single song:**
-   ```bash
-   go run . --song https://music.apple.com/us/album/never-gonna-give-you-up-2022-remaster/1624945511?i=1624945512
-   # or
-   go run . https://music.apple.com/us/song/you-move-me-2022-remaster/1624945520
-   ```
+## Supported formats
 
-4. **Interactive selection:**
-   ```bash
-   go run . --select https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511
-   ```
-   For album and playlist URLs, select tracks/items. For artist URLs, select albums and music videos in one table. For direct music video URLs, select video quality.
+| Format | Description | Requires subscription |
+|---|---|---|
+| `alac` | `audio-alac-stereo` | Yes |
+| `ec3` | `audio-atmos` / `audio-ec3` | Yes |
+| `aac` | `audio-stereo` | Yes |
+| `aac-lc` | `audio-stereo` | Yes |
+| `aac-binaural` | `audio-stereo-binaural` | Yes |
+| `aac-downmix` | `audio-stereo-downmix` | Yes |
+| `MV` | Music video | Yes |
 
-5. **Artist / music video selection:**
-   ```bash
-   go run . --select https://music.apple.com/us/artist/taylor-swift/159260351
-   # or
-   go run . --select https://music.apple.com/us/music-video/example/123456789
-   ```
+Stations require a valid `media-user-token` from an active subscription.
 
-6. **Download playlists:**
-   ```bash
-   go run . https://music.apple.com/us/playlist/taylor-swift-essentials/pl.3950454ced8c45a3b0cc693c2a7db97b
-   # or
-   go run . https://music.apple.com/us/playlist/hi-res-lossless-24-bit-192khz/pl.u-MDAWvpjt38370N
-   ```
+## Requirements
 
-7. **Dolby Atmos:**
-   ```bash
-   go run . --atmos https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
-   ```
+Install and prepare these before running the downloader:
 
-8. **AAC format:**
-   ```bash
-   go run . --aac https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
-   ```
+1. **wrapper-lite**: [github.com/WorldObservationLog/wrapper/tree/lite](https://github.com/WorldObservationLog/wrapper/tree/lite). Required backend decryption service. Start it before using this downloader and set its HTTP endpoint in `lite-server`, for example `http://127.0.0.1:12340`.
+2. **ffmpeg** (Optional): Required only for post-download conversion, animated artwork, or `ffmpeg`-dependent features. See [ffmpeg.org](https://ffmpeg.org/).
 
-9. **View quality info:**
-   ```bash
-   go run . --debug https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
-   ```
+> **Note**: If you are using the precompiled release binaries, **Go is NOT required**. Go (1.23.1+) is only needed if you build from source (see [For Developers](#for-developers)).
 
-10. **Use a specific config file:**
-    ```bash
-    go run . --config config.yaml https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511
-    ```
+## Quick Start
 
-11. **Validate setup before downloading:**
-    ```bash
-    go run . --config config.yaml --config-validate
-    go run . --config config.yaml --doctor
-    go run . --config config.yaml --config-upgrade
-    ```
+Download the precompiled binary for your operating system and architecture from the [latest GitHub Releases](https://github.com/yttxz/apple-music-downloader/releases/latest):
 
-12. **Preview without writing media files:**
-    ```bash
-    go run . --config config.yaml --dry-run --json-summary https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511
-    ```
-
-13. **Download from a batch file:**
-    ```bash
-    # urls.txt can contain one URL per line
-    go run . --config config.yaml --file urls.txt --json-summary
-    ```
-
-14. **Download by Apple Music ID:**
-    ```bash
-    go run . --config config.yaml --id-type album --id 1624945511 --storefront us
-    go run . --config config.yaml --id-type song --id 1624945520 --storefront us --json-summary
-    ```
-
-📖 [Chinese Tutorial (Method 3)](https://telegra.ph/Apple-Music-Alac%E9%AB%98%E8%A7%A3%E6%9E%90%E5%BA%A6%E6%97%A0%E6%8D%9F%E9%9F%B3%E4%B9%90%E4%B8%8B%E8%BD%BD%E6%95%99%E7%A8%8B-04-02-2)
+| Platform | Architecture | Precompiled Binary |
+|---|---|---|
+| **Windows** | x86_64 (64-bit) | `amdl_windows_amd64.exe` |
+| **Windows** | ARM64 | `amdl_windows_arm64.exe` |
+| **macOS** | Apple Silicon (M1/M2/M3/M4) | `amdl_darwin_arm64` |
+| **macOS** | Intel (x86_64) | `amdl_darwin_amd64` |
+| **Linux** | x86_64 (amd64) | `amdl_linux_amd64` |
+| **Linux** | ARM64 (aarch64) | `amdl_linux_arm64` |
+| **Android (Termux)** | ARM64 (aarch64) | `amdl_android_arm64` |
 
 ---
 
-## 🧰 Reliability & Workflow Commands
+### Windows (PowerShell)
 
-### Database-backed skips and repair
+1. Open PowerShell and run the following command to download the executable:
 
-By default, this fork creates `amdl.db` next to the active config/runtime directory. Downloads are recorded only after post-processing succeeds. Failed items are stored separately and can be retried later.
-
-```bash
-# List completed records
-go run . --config config.yaml --db-list downloads
-
-# List failed records
-go run . --config config.yaml --db-list failed
-
-# Retry only failed records
-go run . --config config.yaml --repair --json-summary
-
-# Disable database use for one run
-go run . --config config.yaml --no-db "https://music.apple.com/us/album/example/123"
+```powershell
+# Download precompiled binary (example for 64-bit Windows)
+Invoke-WebRequest -Uri "https://github.com/yttxz/apple-music-downloader/releases/latest/download/amdl_windows_amd64.exe" -OutFile "amdl.exe"
 ```
 
-If a track already exists locally, a repeat run records it as `file-exists` and backfills the database where possible. This makes old downloads visible to future skip checks.
+2. Run `amdl.exe` once to automatically generate the default `config.yaml`:
 
-SQLite is configured with WAL mode and a busy timeout. Parallel workers also use in-memory per-item locks so duplicate URLs in the same batch do not download the same track or music video twice.
-
-### Config upgrade helper
-
-Use this when your existing `config.yaml` predates the newer safety/workflow keys:
-
-```bash
-go run . --config config.yaml --config-upgrade
+```powershell
+.\amdl.exe
 ```
 
-The command does not rewrite your config. It prints missing managed keys and a YAML snippet you can add manually. `--doctor` also warns when managed keys are missing.
+3. Open and edit `config.yaml` to set your `lite-server` address and destination paths.
+4. Test running the downloader:
 
-### JSON summary
-
-Use `--json-summary` for automation-friendly output:
-
-```bash
-go run . --config config.yaml --json-summary --file urls.txt
+```powershell
+.\amdl.exe --help
 ```
 
-The summary contains `started_at`, `completed_at`, `counts`, `downloaded`, `skipped`, and `failed`. Each item includes storefront, media type, Apple ID, codec, quality, path, reason, and error when available.
+Example:
 
-The older `--json` flag is still kept for compatibility and prints the added-tracks array.
+```powershell
+.\amdl.exe "https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511"
+```
 
-### Parallel downloads
+---
 
-`download-concurrency` controls how many top-level URLs are processed at once:
+### macOS
+
+1. Download the precompiled binary:
+
+```bash
+# For Apple Silicon (M-series):
+curl -L -o amdl https://github.com/yttxz/apple-music-downloader/releases/latest/download/amdl_darwin_arm64
+
+# For Intel Macs:
+# curl -L -o amdl https://github.com/yttxz/apple-music-downloader/releases/latest/download/amdl_darwin_amd64
+
+# Grant execution permission
+chmod +x amdl
+```
+
+> **Tip (macOS Gatekeeper)**: If macOS blocks running `amdl` because it is from an unidentified developer, remove the quarantine attribute:
+> ```bash
+> xattr -d com.apple.quarantine amdl
+> ```
+
+2. Run `amdl` once to automatically generate the default `config.yaml`:
+
+```bash
+./amdl
+```
+
+3. Edit `config.yaml` with your settings.
+4. Run the downloader:
+
+```bash
+./amdl "https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511"
+```
+
+---
+
+### Linux
+
+1. Download the precompiled binary:
+
+```bash
+# For x86_64 / amd64:
+curl -L -o amdl https://github.com/yttxz/apple-music-downloader/releases/latest/download/amdl_linux_amd64
+
+# For ARM64:
+# curl -L -o amdl https://github.com/yttxz/apple-music-downloader/releases/latest/download/amdl_linux_arm64
+
+# Grant execution permission
+chmod +x amdl
+```
+
+2. Run `amdl` once to automatically generate the default `config.yaml`:
+
+```bash
+./amdl
+```
+
+3. Edit `config.yaml` with your settings.
+4. Run the downloader:
+
+```bash
+./amdl "https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511"
+```
+
+---
+
+### Android (Termux)
+
+Install Termux from [F-Droid](https://f-droid.org/en/packages/com.termux/) or the [official GitHub releases](https://github.com/termux/termux-app/releases) (do not use the obsolete Play Store version).
+
+1. Update packages and install curl (and optionally ffmpeg):
+
+```bash
+pkg update && pkg upgrade
+pkg install -y curl ffmpeg
+```
+
+2. Grant access to shared Android storage (creates `~/storage/shared`):
+
+```bash
+termux-setup-storage
+```
+
+3. Download precompiled binary:
+
+```bash
+curl -L -o amdl https://github.com/yttxz/apple-music-downloader/releases/latest/download/amdl_android_arm64
+chmod +x amdl
+```
+
+4. Run `amdl` once to automatically generate the default `config.yaml`:
+
+```bash
+./amdl
+```
+
+5. Edit `config.yaml`. To save downloads into Android's shared Music directory, point the paths in `config.yaml` to the shared mount:
 
 ```yaml
-download-concurrency: 3
+paths:
+  alac: "/sdcard/Music/amdl"
+  atmos: "/sdcard/Music/amdl-atmos"
+  aac: "/sdcard/Music/amdl-aac"
+  mv: "/sdcard/Music/amdl-mv"
 ```
 
-Then run a batch:
+6. Run:
 
 ```bash
-go run . --config config.yaml --file urls.txt --json-summary
+./amdl "https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511"
 ```
 
-Notes:
+> **Tips for Termux**:
+> - For long downloads, prevent Android from sleeping with `termux-wake-lock` (release with `termux-wake-unlock` when done).
+> - If wrapper-lite runs on another device on your network, point `lite-server` to that device's LAN IP, not `127.0.0.1`.
+> - These instructions target current Android arm64 Termux environments; 32-bit Android is not a documented target.
+> - If self-update on an older version fails with `lookup api.github.com on [::1]:53 ... connection refused`, re-download the binary once as in step 3; later versions update normally.
 
-- Default remains `1` for compatibility.
-- `--select` is interactive and automatically uses concurrency `1`.
-- Queue-level logs are buffered per top-level URL so parallel batch output stays easier to read.
-- MV segments use a separate `mv-segment-concurrency` setting.
-- Keep `requests-per-minute`, `retry-count`, and `request-timeout-seconds` conservative if you raise concurrency.
+## Configuration
 
-### Search workflows
+When `amdl` is run for the first time without an existing configuration file, it automatically creates `config.yaml` in the current directory from an embedded default template.
 
-```bash
-# Download the first search result
-go run . --config config.yaml --search song "artist title" --search-first
-
-# Save search results without downloading
-go run . --config config.yaml --search album "album title" --search-output results.json
-```
-
----
-
-## ⚙️ Important Config Keys
-
-Newer safety and workflow defaults are included in `config.yaml.example`:
+At minimum, review and set:
 
 ```yaml
-database-enabled: true
-database-path: "amdl.db"
-failed-downloads-enabled: true
+general:
+  # wrapper-lite HTTP API endpoint.
+  lite-server: "http://127.0.0.1:12340"
 
-download-concurrency: 1
-mv-segment-concurrency: 6
-requests-per-minute: 60
-retry-count: 3
-retry-backoff-ms: 500
-request-timeout-seconds: 30
+  # Required for stations. See "Get media-user-token" below.
+  media-user-token: "your-media-user-token"
 
-allow-nonlocal-wrapper: false
-quality-fallback: "best-available" # skip | best-available
-
-artist-filter-singles-eps: false
-artist-filter-live: false
-artist-filter-compilations: false
-artist-filter-duplicates: false
+# Destination folders. Relative paths are resolved from the working directory.
+paths:
+  alac: "AM-Lossless"
+  atmos: "AM-Atmos"
+  aac: "AM-AAC"
+  mv: "AM-MV"
 ```
 
-Wrapper ports are loopback-only by default. If you intentionally expose wrapper ports beyond localhost, set `allow-nonlocal-wrapper: true`, but do this only on a trusted network.
+If wrapper-lite runs on another machine or container, replace `127.0.0.1` with that host's reachable LAN or public address.
 
----
+## Usage
 
-## 📝 Getting media-user-token (For Lyrics)
+Before running any command, make sure:
 
-1. Open [Apple Music](https://music.apple.com) and log in
-2. Open Developer Tools (F12)
-3. Navigate to `Application → Storage → Cookies → https://music.apple.com`
-4. Find the cookie named `media-user-token` and copy its value
-5. Paste the value into `config.yaml` under the `media-user-token` setting
-6. Save the file and start the script
+1. wrapper-lite is running.
+2. `config.yaml` exists and has the correct `lite-server` value.
 
----
+### Album
 
-## 🌐 Getting Translation & Pronunciation Lyrics (Beta)
+```bash
+./amdl "https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511"
+```
 
-> **Note:** These features are currently in beta.
+On Windows:
 
-1. Open [Apple Music Beta](https://beta.music.apple.com) and log in
-2. Open Developer Tools (F12) and switch to the **Network** tab
-3. Search for a song that supports translation/pronunciation lyrics (K-Pop songs recommended)
-4. Press **Ctrl+R** to refresh and let DevTools capture network traffic
-5. Play the song and click the lyrics button - look for a request named `syllable-lyrics`
-6. Stop recording (click the red circle button), then select the **Fetch/XHR** tab
-7. Click on the `syllable-lyrics` request to view details
-8. Find the URL containing: `.../syllable-lyrics?l=<language_code>&extend=ttmlLocalizations`
-9. Copy the language value and paste it into `config.yaml`
-10. **Optional:** To disable pronunciation, remove the corresponding value in config.yaml: `...%5D=<remove_this_value>&extend...`
-11. Save and run the script as usual
+```powershell
+.\amdl.exe "https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511"
+```
 
----
+### Single song
 
-## 👏 Special Thanks
+```bash
+./amdl "https://music.apple.com/us/album/never-gonna-give-you-up-2022-remaster/1624945511?i=1624945512"
+./amdl "https://music.apple.com/us/song/you-move-me-2022-remaster/1624945520"
+```
 
-- **chocomint** - Created `agent-arm64.js`
+### Artist albums
 
----
+```bash
+./amdl --all-album "https://music.apple.com/us/artist/taylor-swift/159260351"
+```
+
+### Playlist
+
+```bash
+./amdl "https://music.apple.com/us/playlist/taylor-swift-essentials/pl.3950454ced8c45a3b0cc693c2a7db97b"
+```
+
+### Interactive selection
+
+```bash
+./amdl --select "https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511"
+```
+
+Enter track numbers separated by spaces.
+
+### Interactive search
+
+```bash
+./amdl --search album "never gonna give you up"
+./amdl --search song "you move me"
+./amdl --search artist "taylor swift"
+```
+
+### Dolby Atmos
+
+```bash
+./amdl --atmos "https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538"
+```
+
+### AAC
+
+```bash
+./amdl --aac "https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538"
+```
+
+### Show quality information
+
+```bash
+./amdl --debug "https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538"
+```
+
+### Common options
+
+```text
+--alac-max <sample-rate>
+--atmos-max <bitrate>
+--aac-type <aac|aac-lc|aac-binaural|aac-downmix>
+--mv-max <resolution>
+--mv-audio-type <atmos|ac3|aac>
+--lite-server <wrapper-lite-url>
+```
+
+## Get media-user-token
+
+`media-user-token` is required for stations.
+
+1. Open [Apple Music](https://music.apple.com) and sign in.
+2. Open browser developer tools with `F12`.
+3. Go to `Application` > `Storage` > `Cookies` > `https://music.apple.com`.
+4. Find the cookie named `media-user-token` and copy its value.
+5. Paste it into `general.media-user-token` in `config.yaml`.
+6. Restart the downloader.
+
+## Lyrics options
+
+Configure lyrics settings under `metadata.lyrics` in `config.yaml`:
+
+```yaml
+metadata:
+  lyrics:
+    save-file: false                      # Save .lrc or .ttml file to disk
+    embed: true                           # Embed lyrics directly into audio container tags
+    type: "lyrics"                        # Lyrics type: "lyrics" (standard line-by-line) or "syllable-lyrics" (word-by-word)
+    format: "lrc"                         # Lyrics file format: "lrc" or "ttml"
+    extra: ""                             # Additional options: "" (default), "translation", or "pronunciation"
+```
+
+> **Tips**:
+> - Set `general.language` in `config.yaml` (e.g. `"en-US"`, `"zh-Hans-CN"`, `"ja"`) to control the target language for translated lyrics.
+> - `extra`: set to `"translation"` for translated lyrics or `"pronunciation"` for phonetic/romanized lyrics (when provided by Apple Music).
+
+## Upgrade
+
+### Built-in Self Update (Recommended)
+
+Upgrade to the latest official release with automatic checksum verification and interactive configuration migration:
+
+```bash
+# Check and perform self-update with interactive config migration
+./amdl --update
+
+# Shorthand flag
+./amdl -U
+
+# Check for updates without downloading
+./amdl --check-update
+
+# Automated / non-interactive mode (automatically accept new option defaults)
+./amdl -U -y
+```
+
+On Windows PowerShell:
+
+```powershell
+# Perform self-update
+.\amdl.exe --update
+
+# Shorthand flag
+.\amdl.exe -U
+```
+
+> **Note**: Self-update automatically creates a timestamped `config.yaml.bak_...` backup and safely guides the migration of new settings without overwriting your credentials, custom paths, or comments. If a proxy is configured in `config.yaml`, the updater automatically routes through it.
+
+### Manual Binary Update
+
+Download the latest precompiled executable from [GitHub Releases](https://github.com/yttxz/apple-music-downloader/releases/latest) and replace your current `amdl` / `amdl.exe` binary.
+
+> For developers building from source, see [For Developers](#for-developers).
+
+## For Developers
+
+If you want to contribute, modify the code, or build the downloader from source:
+
+### Prerequisites
+
+1. **Go 1.23.1 or newer**: [go.dev/dl](https://go.dev/dl/).
+2. **Git**: [git-scm.com](https://git-scm.com/).
+3. **ffmpeg**: [ffmpeg.org](https://ffmpeg.org/) (optional for audio conversion or animated artwork).
+
+### Clone and Build
+
+**macOS / Linux**:
+
+```bash
+git clone https://github.com/yttxz/apple-music-downloader.git
+cd apple-music-downloader
+cp config.yaml.example config.yaml
+go build -o amdl .
+./amdl --help
+```
+
+**Windows (PowerShell)**:
+
+```powershell
+git clone https://github.com/yttxz/apple-music-downloader.git
+cd apple-music-downloader
+copy config.yaml.example config.yaml
+go build -o amdl.exe .
+.\amdl.exe --help
+```
+
+### Run in Development
+
+```bash
+go run . "https://music.apple.com/us/album/whenever-you-need-somebody-2022-remaster/1624945511"
+```
+
+### Update Source Code
+
+```bash
+git pull
+go build -o amdl .
+```
+
+On Windows (PowerShell):
+
+```powershell
+git pull
+go build -o amdl.exe .
+```
+
+### Releasing
+
+Releases are driven by the `VERSION` file. When a push to `main` carries a `VERSION` whose `v<VERSION>` tag does not exist yet, the Release workflow builds every platform and publishes a GitHub Release with that tag. To cut a release, bump `VERSION` (e.g. `0.1.0` → `0.1.1`) and merge it into `main`. A version with a suffix such as `0.2.0-beta.1` is published as a pre-release.
+
+Release binaries self-update from the repository that built them, so a fork's releases update from the fork.
+
+## Credits
+
+- **Sorrow** created the original script.
+- **WorldObservationLog** created [wrapper / wrapper-lite](https://github.com/WorldObservationLog/wrapper), used as the backend decryption service.
+- **Sendy McSenderson** contributed the streaming download-and-decrypt implementation.
+- [go-mp4tag](https://github.com/itouakirai/go-mp4tag) writes station MP4 metadata.
+- [FFmpeg](https://ffmpeg.org/) supports optional conversion and animated-artwork features.

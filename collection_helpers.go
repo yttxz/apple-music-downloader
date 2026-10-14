@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"apple-music-downloader/utils/task"
+	task "amdl/internal/model"
 )
 
 func saveFolderForCurrentCodec(state *sessionState, folderName string) string {

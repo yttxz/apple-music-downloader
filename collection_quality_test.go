@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"apple-music-downloader/utils/ampapi"
+	ampapi "amdl/internal/amp-api"
 )
 
 func TestResolveCollectionCodecAndQualityFallsBackToAACWhenManifestHasNoEnhancedHLS(t *testing.T) {

@@ -128,18 +128,7 @@ func processDownloadURL(state *sessionState, job downloadJob, token string) {
 			return
 		}
 		state.Counter.Total++
-		if len(Config.MediaUserToken) <= 50 {
-			state.Logln(": meida-user-token is not set, skip MV dl")
-			recordSkip(dbItemFromURL(urlRaw), "missing-media-user-token")
-			state.Counter.Success++
-			return
-		}
-		if !toolAvailable(Config.MP4DecryptPath) {
-			state.Logf(": mp4decrypt not found at '%s', skip MV dl\n", Config.MP4DecryptPath)
-			recordSkip(dbItemFromURL(urlRaw), "missing-tool")
-			state.Counter.Success++
-			return
-		}
+
 		mvSaveDir := strings.NewReplacer(
 			"{ArtistName}", "",
 			"{UrlArtistName}", "",

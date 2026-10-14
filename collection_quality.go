@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"apple-music-downloader/utils/ampapi"
+	ampapi "amdl/internal/amp-api"
 )
 
 func resolveCollectionCodecAndQuality(state *sessionState, folderFormat string, storefront string, language string, token string, firstTrack ampapi.TrackRespData) (string, string) {
@@ -60,7 +60,7 @@ func preferredEnhancedHLS(trackID string, fallbackURL string, audioTraits []stri
 		return fullM3u8URL
 	}
 	if warnOnFallback {
-		fmt.Println("Failed to get best quality m3u8 from device m3u8 port, will use m3u8 from Web API")
+		fmt.Println("Failed to get best quality m3u8 from wrapper-lite, will use m3u8 from Web API")
 	}
 	return fallbackURL
 }

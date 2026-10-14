@@ -1,6 +1,7 @@
 package main
 
 import (
+	"amdl/internal/wrapper"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"apple-music-downloader/utils/task"
+	task "amdl/internal/model"
 
 	"github.com/olekukonko/tablewriter"
 )
@@ -220,10 +221,7 @@ func runDoctor() error {
 	}{
 		{"config", true, "loaded"},
 		{"ffmpeg", toolAvailable(Config.FFmpegPath), Config.FFmpegPath},
-		{"MP4Box", toolAvailable(Config.MP4BoxPath), Config.MP4BoxPath},
-		{"mp4decrypt", toolAvailable(Config.MP4DecryptPath), Config.MP4DecryptPath},
-		{"decrypt wrapper port", isLoopbackConfig(Config.DecryptM3u8Port), Config.DecryptM3u8Port},
-		{"get-m3u8 wrapper port", isLoopbackConfig(Config.GetM3u8Port), Config.GetM3u8Port},
+		{"wrapper-lite endpoint", Config.LiteServer != "", Config.LiteServer},
 	}
 	for _, check := range checks {
 		status := "OK"
@@ -231,6 +229,11 @@ func runDoctor() error {
 			status = "WARN"
 		}
 		fmt.Printf("[%s] %s: %s\n", status, check.name, check.msg)
+	}
+	if regions, err := wrapper.GetStatus(Config.LiteServer); err != nil {
+		fmt.Printf("[WARN] wrapper-lite status: %v\n", redactError(err))
+	} else {
+		fmt.Printf("[OK] wrapper-lite regions: %v\n", regions)
 	}
 	if appDB != nil {
 		fmt.Printf("[OK] database: %s\n", Config.DatabasePath)

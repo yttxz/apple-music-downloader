@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 )
@@ -101,5 +104,22 @@ func TestAppleMusicURLParsing(t *testing.T) {
 				t.Fatalf("parse(%q) = (%q, %q), want (%q, %q)", tt.url, storefront, id, tt.storefront, tt.id)
 			}
 		})
+	}
+}
+
+func TestVideoSelectionPropagatesPlayReadyProtection(t *testing.T) {
+	oldConfig := Config
+	t.Cleanup(func() { Config = oldConfig })
+	Config = defaultConfig()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3000000,AVERAGE-BANDWIDTH=2500000,RESOLUTION=1920x1080,CODECS=\"hvc1\",ALLOWED-CPC=\"com.microsoft.playready:SL3000\"\nvideo_1920x1080.m3u8\n")
+	}))
+	defer server.Close()
+	url, playReady, err := extractVideoVariantWithSelection(server.URL+"/master.m3u8", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !playReady || url != server.URL+"/video_1920x1080.m3u8" {
+		t.Fatalf("selection = %s, PlayReady=%v", url, playReady)
 	}
 }
